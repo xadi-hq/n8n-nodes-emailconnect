@@ -1,0 +1,70 @@
+{
+  "name": "n8n-nodes-emailconnect",
+  "version": "0.1.0",
+  "description": "n8n community node for EmailConnect - Email automation and webhook integration",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "emailconnect",
+    "email",
+    "automation",
+    "webhook",
+    "workflow",
+    "integration"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/xadi-hq/n8n-nodes-emailconnect#readme",
+  "author": {
+    "name": "Xander",
+    "email": "xander@xadi.nl"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xadi-hq/n8n-nodes-emailconnect.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xadi-hq/n8n-nodes-emailconnect/issues"
+  },
+  "engines": {
+    "node": ">=18.10",
+    "pnpm": ">=9.1"
+  },
+  "packageManager": "pnpm@9.1.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier nodes credentials --write",
+    "lint": "eslint nodes credentials",
+    "lintfix": "eslint nodes credentials --fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepublishOnly": "npm run build && npm run lint -s"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/EmailConnectApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/EmailConnect/EmailConnect.node.js",
+      "dist/nodes/EmailConnectTrigger/EmailConnectTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^7.15.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-n8n-nodes-base": "^1.16.1",
+    "gulp": "^5.0.1",
+    "jest": "^29.7.0",
+    "n8n-workflow": "^1.2.0",
+    "prettier": "^3.3.2",
+    "typescript": "^5.5.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

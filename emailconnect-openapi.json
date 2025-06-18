@@ -1,0 +1,1216 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "EmailConnect.eu API",
+    "version": "1.0.0",
+    "description": "\n# EmailConnect.eu API Documentation\n\nWelcome to the EmailConnect.eu API! This API allows you to programmatically manage your email domains, aliases, and webhooks.\n\n## Authentication\n\nAll API endpoints require authentication using your API key. Include your API key in the request header:\n\n```\nX-API-KEY: your-api-key-here\n```\n\nYou can find your API key in your [account settings](https://emailconnect.eu/settings).\n\n## Rate Limits\n\nAPI requests are rate-limited to ensure fair usage:\n- **Free Plan**: 100 requests per hour\n- **Pro Plan**: 1,000 requests per hour\n- **Enterprise Plan**: 10,000 requests per hour\n\n## Support\n\nNeed help? Contact us at [support@emailconnect.eu](mailto:support@emailconnect.eu) or visit our [help center](https://emailconnect.eu/docs).\n    ",
+    "contact": {
+      "name": "EmailConnect.eu Support",
+      "email": "support@emailconnect.eu",
+      "url": "https://emailconnect.eu"
+    },
+    "license": {
+      "name": "Terms of Service",
+      "url": "https://emailconnect.eu/terms-of-service"
+    },
+    "x-logo": {
+      "url": "/src/frontend/assets/images/logo-light.png",
+      "altText": "EmailConnect.eu"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://emailconnect.eu",
+      "description": "Production server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "userApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-KEY",
+        "description": "API Key for user authentication. Find your API key in your account settings."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "example": 400
+          },
+          "error": {
+            "type": "string",
+            "example": "Bad Request"
+          },
+          "message": {
+            "type": "string",
+            "example": "Invalid input"
+          }
+        },
+        "required": [
+          "statusCode",
+          "error",
+          "message"
+        ]
+      },
+      "AdminLoginPayload": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "admin"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "example": "securepassword123"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "AdminLoginSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Admin login successful"
+          },
+          "token": {
+            "type": "string",
+            "description": "JWT token (also set as httpOnly cookie 'admin_token')"
+          }
+        }
+      },
+      "UserProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "cuid123"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "user@example.com"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "example": "John Doe"
+          },
+          "monthlyEmailLimit": {
+            "type": "integer",
+            "example": 50
+          },
+          "planType": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro",
+              "enterprise"
+            ],
+            "example": "free"
+          },
+          "currentMonthEmails": {
+            "type": "integer",
+            "example": 25
+          },
+          "verified": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "monthlyEmailLimit",
+          "planType",
+          "currentMonthEmails",
+          "verified"
+        ]
+      },
+      "Domain": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "domain": {
+            "type": "string",
+            "example": "example.com"
+          },
+          "apiKey": {
+            "type": "string",
+            "readOnly": true,
+            "description": "API key for this domain"
+          },
+          "dkimPublicKey": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "dkimPrivateKey": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "dkimSelector": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "isVerified": {
+            "type": "boolean",
+            "default": false,
+            "readOnly": true
+          },
+          "verificationToken": {
+            "type": "string",
+            "readOnly": true,
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "CreateDomainPayload": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "example": "mydomain.com"
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "DomainStatus": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "example": "example.com"
+          },
+          "isVerified": {
+            "type": "boolean"
+          },
+          "dnsRecords": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "example": "TXT"
+                },
+                "name": {
+                  "type": "string",
+                  "example": "example.com or _dkim.example.com"
+                },
+                "value": {
+                  "type": "string",
+                  "example": "verification-token or dkim-public-key"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "pending",
+                    "failed"
+                  ],
+                  "example": "pending"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Alias": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+          },
+          "domainId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "localPart": {
+            "type": "string",
+            "example": "support"
+          },
+          "destinationEmail": {
+            "type": "string",
+            "format": "email",
+            "example": "forward@example.net"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
+        },
+        "required": [
+          "domainId",
+          "localPart",
+          "destinationEmail"
+        ]
+      },
+      "CreateAliasPayload": {
+        "type": "object",
+        "properties": {
+          "localPart": {
+            "type": "string",
+            "example": "info"
+          },
+          "destinationEmail": {
+            "type": "string",
+            "format": "email",
+            "example": "user@anotherdomain.com"
+          }
+        },
+        "required": [
+          "localPart",
+          "destinationEmail"
+        ]
+      },
+      "UpdateAliasPayload": {
+        "type": "object",
+        "properties": {
+          "destinationEmail": {
+            "type": "string",
+            "format": "email",
+            "example": "newforward@example.net"
+          }
+        },
+        "required": [
+          "destinationEmail"
+        ]
+      },
+      "WebhookLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "domainId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sender": {
+            "type": "string",
+            "format": "email"
+          },
+          "recipient": {
+            "type": "string",
+            "format": "email"
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "processed",
+              "failed"
+            ]
+          },
+          "payload": {
+            "type": "object",
+            "description": "Raw email payload or structured data"
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request payload or parameters.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "ErrorResponse#"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication failed or missing API key for user endpoint.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "ErrorResponse#"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "User is authenticated but does not have permission to access the resource.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "ErrorResponse#"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The requested resource was not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "ErrorResponse#"
+            }
+          }
+        }
+      },
+      "UnauthorizedAdmin": {
+        "description": "Authentication failed or missing credentials for admin endpoint.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "ErrorResponse#"
+            }
+          }
+        }
+      },
+      "ForbiddenAdmin": {
+        "description": "Admin is authenticated but does not have permission for this specific admin action.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "ErrorResponse#"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "User Domains",
+      "description": "Manage your email domains. Add domains, verify ownership, and configure email routing.",
+      "externalDocs": {
+        "description": "Domain setup guide",
+        "url": "https://emailconnect.eu/docs#domains"
+      }
+    },
+    {
+      "name": "User Aliases",
+      "description": "Create and manage email aliases for your verified domains. Route specific email addresses to different webhooks.",
+      "externalDocs": {
+        "description": "Alias configuration guide",
+        "url": "https://emailconnect.eu/docs#aliases"
+      }
+    },
+    {
+      "name": "User Webhooks",
+      "description": "Configure webhook endpoints to receive email data. Set up multiple webhooks per domain for different processing needs.",
+      "externalDocs": {
+        "description": "Webhook integration guide",
+        "url": "https://emailconnect.eu/docs#webhooks"
+      }
+    }
+  ],
+  "paths": {
+    "/api/domains": {
+      "get": {
+        "tags": [
+          "User Domains"
+        ],
+        "summary": "List user domains",
+        "description": "Retrieve all domains owned by the authenticated user.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of user domains",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Domain"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "User Domains"
+        ],
+        "summary": "Add a new domain",
+        "description": "Add a new domain to your account. The domain will need to be verified before it can receive emails.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDomainPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Domain created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/domains/{domainId}": {
+      "get": {
+        "tags": [
+          "User Domains"
+        ],
+        "summary": "Get domain details",
+        "description": "Retrieve details for a specific domain including verification status.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Domain ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Domain details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Domain"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "User Domains"
+        ],
+        "summary": "Delete a domain",
+        "description": "Delete a domain and all associated aliases and webhooks.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Domain ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Domain deleted successfully"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/domains/{domainId}/status": {
+      "get": {
+        "tags": [
+          "User Domains"
+        ],
+        "summary": "Check domain verification status",
+        "description": "Check the verification status of a domain and get DNS records that need to be configured.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Domain ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Domain verification status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/domains/{domainId}/verify": {
+      "post": {
+        "tags": [
+          "User Domains"
+        ],
+        "summary": "Trigger domain verification",
+        "description": "Manually trigger verification for a domain. This will check DNS records and update the verification status.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Domain ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification triggered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/aliases": {
+      "get": {
+        "tags": [
+          "User Aliases"
+        ],
+        "summary": "List aliases for a domain",
+        "description": "Retrieve all aliases for a specific domain.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Domain ID to filter aliases"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of aliases",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Alias"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "User Aliases"
+        ],
+        "summary": "Create a new alias",
+        "description": "Create a new email alias for a domain.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Domain ID for the alias"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAliasPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Alias created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alias"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/aliases/{aliasId}": {
+      "get": {
+        "tags": [
+          "User Aliases"
+        ],
+        "summary": "Get alias details",
+        "description": "Retrieve details for a specific alias.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "aliasId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Alias ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alias details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alias"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "User Aliases"
+        ],
+        "summary": "Update an alias",
+        "description": "Update the destination email for an alias.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "aliasId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Alias ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAliasPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alias updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alias"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "User Aliases"
+        ],
+        "summary": "Delete an alias",
+        "description": "Delete an email alias.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "aliasId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Alias ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Alias deleted successfully"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/webhooks": {
+      "get": {
+        "tags": [
+          "User Webhooks"
+        ],
+        "summary": "List user webhooks",
+        "description": "Retrieve all webhooks owned by the authenticated user.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of user webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookLog"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "User Webhooks"
+        ],
+        "summary": "Create a new webhook",
+        "description": "Create a new webhook endpoint to receive email data.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://myapp.com/webhook/email"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Main email processing webhook"
+                  }
+                },
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Webhook created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/webhooks/{webhookId}": {
+      "get": {
+        "tags": [
+          "User Webhooks"
+        ],
+        "summary": "Get webhook details",
+        "description": "Retrieve details for a specific webhook.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Webhook ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "lastTriggered": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "User Webhooks"
+        ],
+        "summary": "Update a webhook",
+        "description": "Update webhook URL or description.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Webhook ID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://myapp.com/webhook/email-updated"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Updated email processing webhook"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "User Webhooks"
+        ],
+        "summary": "Delete a webhook",
+        "description": "Delete a webhook endpoint.",
+        "security": [
+          {
+            "userApiKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "webhookId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Webhook ID"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Webhook deleted successfully"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  }
+}

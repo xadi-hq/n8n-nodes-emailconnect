@@ -1,0 +1,444 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EmailConnect = void 0;
+const GenericFunctions_1 = require("./GenericFunctions");
+class EmailConnect {
+    constructor() {
+        this.description = {
+            displayName: 'EmailConnect',
+            name: 'emailConnect',
+            icon: 'file:emailconnect.svg',
+            group: ['transform'],
+            version: 1,
+            subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
+            description: 'Interact with EmailConnect API for email automation',
+            defaults: {
+                name: 'EmailConnect',
+            },
+            inputs: ["main" /* NodeConnectionType.Main */],
+            outputs: ["main" /* NodeConnectionType.Main */],
+            credentials: [
+                {
+                    name: 'emailConnectApi',
+                    required: true,
+                },
+            ],
+            properties: [
+                {
+                    displayName: 'Resource',
+                    name: 'resource',
+                    type: 'options',
+                    noDataExpression: true,
+                    options: [
+                        {
+                            name: 'Domain',
+                            value: 'domain',
+                        },
+                        {
+                            name: 'Alias',
+                            value: 'alias',
+                        },
+                        {
+                            name: 'Webhook',
+                            value: 'webhook',
+                        },
+                    ],
+                    default: 'domain',
+                },
+                // Domain Operations
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['domain'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Get Many',
+                            value: 'getAll',
+                            description: 'Get many domains',
+                            action: 'Get many domains',
+                        },
+                        {
+                            name: 'Get',
+                            value: 'get',
+                            description: 'Get a domain',
+                            action: 'Get a domain',
+                        },
+                        {
+                            name: 'Get Status',
+                            value: 'getStatus',
+                            description: 'Get domain verification status',
+                            action: 'Get domain status',
+                        },
+                        {
+                            name: 'Update Configuration',
+                            value: 'updateConfig',
+                            description: 'Update domain configuration',
+                            action: 'Update domain configuration',
+                        },
+                    ],
+                    default: 'getAll',
+                },
+                // Domain ID field
+                {
+                    displayName: 'Domain ID',
+                    name: 'domainId',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['domain'],
+                            operation: ['get', 'getStatus', 'updateConfig'],
+                        },
+                    },
+                    default: '',
+                    description: 'The ID of the domain',
+                },
+                // Domain Configuration fields
+                {
+                    displayName: 'Allow Attachments',
+                    name: 'allowAttachments',
+                    type: 'boolean',
+                    displayOptions: {
+                        show: {
+                            resource: ['domain'],
+                            operation: ['updateConfig'],
+                        },
+                    },
+                    default: false,
+                    description: 'Whether to include email attachments in webhook payload',
+                },
+                {
+                    displayName: 'Include Envelope Data',
+                    name: 'includeEnvelopeData',
+                    type: 'boolean',
+                    displayOptions: {
+                        show: {
+                            resource: ['domain'],
+                            operation: ['updateConfig'],
+                        },
+                    },
+                    default: false,
+                    description: 'Whether to include SMTP envelope data in webhook payload',
+                },
+                // Alias Operations
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['alias'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Create',
+                            value: 'create',
+                            description: 'Create a new alias',
+                            action: 'Create an alias',
+                        },
+                        {
+                            name: 'Delete',
+                            value: 'delete',
+                            description: 'Delete an alias',
+                            action: 'Delete an alias',
+                        },
+                        {
+                            name: 'Get',
+                            value: 'get',
+                            description: 'Get an alias',
+                            action: 'Get an alias',
+                        },
+                        {
+                            name: 'Get Many',
+                            value: 'getAll',
+                            description: 'Get many aliases for a domain',
+                            action: 'Get many aliases',
+                        },
+                        {
+                            name: 'Update',
+                            value: 'update',
+                            description: 'Update an alias',
+                            action: 'Update an alias',
+                        },
+                    ],
+                    default: 'getAll',
+                },
+                // Domain ID for aliases
+                {
+                    displayName: 'Domain ID',
+                    name: 'domainId',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['alias'],
+                            operation: ['getAll', 'create'],
+                        },
+                    },
+                    default: '',
+                    description: 'The ID of the domain for the alias',
+                },
+                // Alias ID field
+                {
+                    displayName: 'Alias ID',
+                    name: 'aliasId',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['alias'],
+                            operation: ['get', 'update', 'delete'],
+                        },
+                    },
+                    default: '',
+                    description: 'The ID of the alias',
+                },
+                // Alias creation/update fields
+                {
+                    displayName: 'Local Part',
+                    name: 'localPart',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['alias'],
+                            operation: ['create'],
+                        },
+                    },
+                    default: '',
+                    description: 'The local part of the email address (before @)',
+                    placeholder: 'support',
+                },
+                {
+                    displayName: 'Destination Email',
+                    name: 'destinationEmail',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['alias'],
+                            operation: ['create', 'update'],
+                        },
+                    },
+                    default: '',
+                    description: 'The email address to forward to',
+                    placeholder: 'user@example.com',
+                },
+                // Webhook Operations
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['webhook'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Create',
+                            value: 'create',
+                            description: 'Create a new webhook',
+                            action: 'Create a webhook',
+                        },
+                        {
+                            name: 'Delete',
+                            value: 'delete',
+                            description: 'Delete a webhook',
+                            action: 'Delete a webhook',
+                        },
+                        {
+                            name: 'Get',
+                            value: 'get',
+                            description: 'Get a webhook',
+                            action: 'Get a webhook',
+                        },
+                        {
+                            name: 'Get Many',
+                            value: 'getAll',
+                            description: 'Get many webhooks',
+                            action: 'Get many webhooks',
+                        },
+                        {
+                            name: 'Update',
+                            value: 'update',
+                            description: 'Update a webhook',
+                            action: 'Update a webhook',
+                        },
+                    ],
+                    default: 'getAll',
+                },
+                // Webhook ID field
+                {
+                    displayName: 'Webhook ID',
+                    name: 'webhookId',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['webhook'],
+                            operation: ['get', 'update', 'delete'],
+                        },
+                    },
+                    default: '',
+                    description: 'The ID of the webhook',
+                },
+                // Webhook creation/update fields
+                {
+                    displayName: 'URL',
+                    name: 'url',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['webhook'],
+                            operation: ['create', 'update'],
+                        },
+                    },
+                    default: '',
+                    description: 'The webhook URL to receive email data',
+                    placeholder: 'https://myapp.com/webhook/email',
+                },
+                {
+                    displayName: 'Description',
+                    name: 'description',
+                    type: 'string',
+                    displayOptions: {
+                        show: {
+                            resource: ['webhook'],
+                            operation: ['create', 'update'],
+                        },
+                    },
+                    default: '',
+                    description: 'Optional description for the webhook',
+                    placeholder: 'Main email processing webhook',
+                },
+            ],
+        };
+    }
+    async execute() {
+        const items = this.getInputData();
+        const returnData = [];
+        const resource = this.getNodeParameter('resource', 0);
+        const operation = this.getNodeParameter('operation', 0);
+        for (let i = 0; i < items.length; i++) {
+            try {
+                if (resource === 'domain') {
+                    if (operation === 'getAll') {
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        returnData.push(...responseData.map((item) => ({ json: item })));
+                    }
+                    else if (operation === 'get') {
+                        const domainId = this.getNodeParameter('domainId', i);
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'getStatus') {
+                        const domainId = this.getNodeParameter('domainId', i);
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}/status`);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'updateConfig') {
+                        const domainId = this.getNodeParameter('domainId', i);
+                        const allowAttachments = this.getNodeParameter('allowAttachments', i);
+                        const includeEnvelopeData = this.getNodeParameter('includeEnvelopeData', i);
+                        const body = {
+                            configuration: {
+                                allowAttachments,
+                                includeEnvelopeData,
+                            },
+                        };
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}`, body);
+                        returnData.push({ json: responseData });
+                    }
+                }
+                else if (resource === 'alias') {
+                    if (operation === 'getAll') {
+                        const domainId = this.getNodeParameter('domainId', i);
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        returnData.push(...responseData.map((item) => ({ json: item })));
+                    }
+                    else if (operation === 'get') {
+                        const aliasId = this.getNodeParameter('aliasId', i);
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'create') {
+                        const domainId = this.getNodeParameter('domainId', i);
+                        const localPart = this.getNodeParameter('localPart', i);
+                        const destinationEmail = this.getNodeParameter('destinationEmail', i);
+                        const body = { localPart, destinationEmail };
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, body);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'update') {
+                        const aliasId = this.getNodeParameter('aliasId', i);
+                        const destinationEmail = this.getNodeParameter('destinationEmail', i);
+                        const body = { destinationEmail };
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}`, body);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'delete') {
+                        const aliasId = this.getNodeParameter('aliasId', i);
+                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/aliases/${aliasId}`);
+                        returnData.push({ json: { success: true, aliasId } });
+                    }
+                }
+                else if (resource === 'webhook') {
+                    if (operation === 'getAll') {
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        returnData.push(...responseData.map((item) => ({ json: item })));
+                    }
+                    else if (operation === 'get') {
+                        const webhookId = this.getNodeParameter('webhookId', i);
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'create') {
+                        const url = this.getNodeParameter('url', i);
+                        const description = this.getNodeParameter('description', i);
+                        const body = { url };
+                        if (description)
+                            body.description = description;
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', body);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'update') {
+                        const webhookId = this.getNodeParameter('webhookId', i);
+                        const url = this.getNodeParameter('url', i);
+                        const description = this.getNodeParameter('description', i);
+                        const body = { url };
+                        if (description)
+                            body.description = description;
+                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body);
+                        returnData.push({ json: responseData });
+                    }
+                    else if (operation === 'delete') {
+                        const webhookId = this.getNodeParameter('webhookId', i);
+                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
+                        returnData.push({ json: { success: true, webhookId } });
+                    }
+                }
+            }
+            catch (error) {
+                if (this.continueOnFail()) {
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                    returnData.push({ json: { error: errorMessage } });
+                    continue;
+                }
+                throw error;
+            }
+        }
+        return [returnData];
+    }
+}
+exports.EmailConnect = EmailConnect;
