@@ -50,6 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved webhook lifecycle management in trigger node
 - Better error handling in dropdown loading
 
+## [0.1.2] - 2024-06-18
+
+### Added
+- **Complete Webhook Automation**: Trigger node now fully automates email forwarding setup
+- **Webhook Verification**: Automatic webhook verification using EmailConnect's verification system
+- **Smart Webhook Assignment**: Assigns webhooks to domains (catchall) or aliases (priority) based on filters
+- **Proper Email Flow**: Emails now automatically route to n8n webhooks when trigger is activated
+
+### Technical Improvements
+- **Webhook Lifecycle Management**: Create → Verify → Assign → Clean up on deactivation
+- **Priority System**: Alias filters take priority over domain filters for webhook assignment
+- **Verification Token Handling**: Automatic verification token extraction and submission
+- **Error Handling**: Better error messages for webhook setup failures
+
+### API Integration
+- Uses existing `PUT /domains/:id/webhook` endpoint for domain catchall assignment
+- Uses existing `POST /webhooks/:webhookId/verify` and `/verify/complete` for verification
+- Ready for new `PUT /aliases/:id/webhook` endpoint for alias-specific assignment
+
 ## [Unreleased]
 
 ### Planned Features

@@ -96,7 +96,7 @@ export class EmailConnect implements INodeType {
 
 			// Domain ID field
 			{
-				displayName: 'Domain',
+				displayName: 'Domain Name or ID',
 				name: 'domainId',
 				type: 'options',
 				typeOptions: {
@@ -110,7 +110,7 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'Select the domain to work with',
+				description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 
 			// Domain Configuration fields
@@ -189,7 +189,7 @@ export class EmailConnect implements INodeType {
 
 			// Domain ID for aliases
 			{
-				displayName: 'Domain',
+				displayName: 'Domain Name or ID',
 				name: 'domainId',
 				type: 'options',
 				typeOptions: {
@@ -203,12 +203,12 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'Select the domain for the alias',
+				description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 
 			// Alias ID field
 			{
-				displayName: 'Alias',
+				displayName: 'Alias Name or ID',
 				name: 'aliasId',
 				type: 'options',
 				typeOptions: {
@@ -223,7 +223,7 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'Select the alias to work with',
+				description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 
 			// Alias creation/update fields
