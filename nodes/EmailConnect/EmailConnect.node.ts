@@ -1,6 +1,8 @@
 import {
 	IExecuteFunctions,
+	ILoadOptionsFunctions,
 	INodeExecutionData,
+	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
 	NodeConnectionType,
@@ -94,9 +96,12 @@ export class EmailConnect implements INodeType {
 
 			// Domain ID field
 			{
-				displayName: 'Domain ID',
+				displayName: 'Domain',
 				name: 'domainId',
-				type: 'string',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getDomains',
+				},
 				required: true,
 				displayOptions: {
 					show: {
@@ -105,7 +110,7 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'The ID of the domain',
+				description: 'Select the domain to work with',
 			},
 
 			// Domain Configuration fields
@@ -184,9 +189,12 @@ export class EmailConnect implements INodeType {
 
 			// Domain ID for aliases
 			{
-				displayName: 'Domain ID',
+				displayName: 'Domain',
 				name: 'domainId',
-				type: 'string',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getDomains',
+				},
 				required: true,
 				displayOptions: {
 					show: {
@@ -195,14 +203,18 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'The ID of the domain for the alias',
+				description: 'Select the domain for the alias',
 			},
 
 			// Alias ID field
 			{
-				displayName: 'Alias ID',
+				displayName: 'Alias',
 				name: 'aliasId',
-				type: 'string',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getAliases',
+					loadOptionsDependsOn: ['domainId'],
+				},
 				required: true,
 				displayOptions: {
 					show: {
@@ -211,7 +223,7 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'The ID of the alias',
+				description: 'Select the alias to work with',
 			},
 
 			// Alias creation/update fields
@@ -339,6 +351,39 @@ export class EmailConnect implements INodeType {
 				placeholder: 'Main email processing webhook',
 			},
 		],
+	};
+
+	methods = {
+		loadOptions: {
+			async getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				try {
+					const domains = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
+					return domains.map((domain: any) => ({
+						name: `${domain.domain} (${domain.id})`,
+						value: domain.id,
+					}));
+				} catch (error) {
+					return [];
+				}
+			},
+
+			async getAliases(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				try {
+					const domainId = this.getCurrentNodeParameter('domainId') as string;
+					if (!domainId) {
+						return [];
+					}
+
+					const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+					return aliases.map((alias: any) => ({
+						name: `${alias.email} (${alias.id})`,
+						value: alias.id,
+					}));
+				} catch (error) {
+					return [];
+				}
+			},
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {

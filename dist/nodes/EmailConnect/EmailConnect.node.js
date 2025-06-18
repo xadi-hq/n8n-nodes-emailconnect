@@ -86,9 +86,12 @@ class EmailConnect {
                 },
                 // Domain ID field
                 {
-                    displayName: 'Domain ID',
+                    displayName: 'Domain',
                     name: 'domainId',
-                    type: 'string',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getDomains',
+                    },
                     required: true,
                     displayOptions: {
                         show: {
@@ -97,7 +100,7 @@ class EmailConnect {
                         },
                     },
                     default: '',
-                    description: 'The ID of the domain',
+                    description: 'Select the domain to work with',
                 },
                 // Domain Configuration fields
                 {
@@ -173,9 +176,12 @@ class EmailConnect {
                 },
                 // Domain ID for aliases
                 {
-                    displayName: 'Domain ID',
+                    displayName: 'Domain',
                     name: 'domainId',
-                    type: 'string',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getDomains',
+                    },
                     required: true,
                     displayOptions: {
                         show: {
@@ -184,13 +190,17 @@ class EmailConnect {
                         },
                     },
                     default: '',
-                    description: 'The ID of the domain for the alias',
+                    description: 'Select the domain for the alias',
                 },
                 // Alias ID field
                 {
-                    displayName: 'Alias ID',
+                    displayName: 'Alias',
                     name: 'aliasId',
-                    type: 'string',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getAliases',
+                        loadOptionsDependsOn: ['domainId'],
+                    },
                     required: true,
                     displayOptions: {
                         show: {
@@ -199,7 +209,7 @@ class EmailConnect {
                         },
                     },
                     default: '',
-                    description: 'The ID of the alias',
+                    description: 'Select the alias to work with',
                 },
                 // Alias creation/update fields
                 {
@@ -323,6 +333,38 @@ class EmailConnect {
                     placeholder: 'Main email processing webhook',
                 },
             ],
+        };
+        this.methods = {
+            loadOptions: {
+                async getDomains() {
+                    try {
+                        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        return domains.map((domain) => ({
+                            name: `${domain.domain} (${domain.id})`,
+                            value: domain.id,
+                        }));
+                    }
+                    catch (error) {
+                        return [];
+                    }
+                },
+                async getAliases() {
+                    try {
+                        const domainId = this.getCurrentNodeParameter('domainId');
+                        if (!domainId) {
+                            return [];
+                        }
+                        const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        return aliases.map((alias) => ({
+                            name: `${alias.email} (${alias.id})`,
+                            value: alias.id,
+                        }));
+                    }
+                    catch (error) {
+                        return [];
+                    }
+                },
+            },
         };
     }
     async execute() {

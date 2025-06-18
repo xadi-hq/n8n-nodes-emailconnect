@@ -32,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Includes proper error handling and user feedback
 - SVG icon integration for consistent UI experience
 
+## [0.1.1] - 2024-06-18
+
+### Added
+- **Dynamic Dropdowns**: Domain and alias selection now loads from API instead of manual entry
+- **Automatic Webhook Registration**: Trigger node automatically creates/deletes webhooks in EmailConnect
+- **Smart Webhook Association**: Associates webhooks with domains/aliases based on trigger filters
+- **Enhanced UX**: "All domains" and "All aliases" options for trigger filters
+
+### Fixed
+- **Missing Trigger Icon**: Added EmailConnect brand icon to trigger node
+- **Brand Icon**: Replaced generic email icon with EmailConnect brand logo
+- **Webhook Automation**: Trigger node now uses n8n's webhook URL automatically
+
+### Technical Improvements
+- Added `loadOptions` methods for dynamic dropdown population
+- Improved webhook lifecycle management in trigger node
+- Better error handling in dropdown loading
+
 ## [Unreleased]
 
 ### Planned Features

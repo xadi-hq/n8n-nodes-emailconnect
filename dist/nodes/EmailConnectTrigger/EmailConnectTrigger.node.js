@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailConnectTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
+const GenericFunctions_1 = require("../EmailConnect/GenericFunctions");
 class EmailConnectTrigger {
     constructor() {
         this.description = {
@@ -58,38 +59,139 @@ class EmailConnectTrigger {
                 {
                     displayName: 'Domain Filter',
                     name: 'domainFilter',
-                    type: 'string',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getDomains',
+                    },
                     default: '',
                     description: 'Optional: Only trigger for emails from specific domain (leave empty for all domains)',
-                    placeholder: 'example.com',
                 },
                 {
                     displayName: 'Alias Filter',
                     name: 'aliasFilter',
-                    type: 'string',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getAllAliases',
+                    },
                     default: '',
                     description: 'Optional: Only trigger for emails to specific alias (leave empty for all aliases)',
-                    placeholder: 'support@example.com',
                 },
             ],
+        };
+        this.methods = {
+            loadOptions: {
+                async getDomains() {
+                    try {
+                        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        const options = domains.map((domain) => ({
+                            name: domain.domain,
+                            value: domain.domain,
+                        }));
+                        // Add "All domains" option
+                        options.unshift({ name: 'All domains', value: '' });
+                        return options;
+                    }
+                    catch (error) {
+                        return [{ name: 'All domains', value: '' }];
+                    }
+                },
+                async getAllAliases() {
+                    try {
+                        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        const allAliases = [{ name: 'All aliases', value: '' }];
+                        for (const domain of domains) {
+                            try {
+                                const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domain.id}`);
+                                aliases.forEach((alias) => {
+                                    allAliases.push({
+                                        name: alias.email,
+                                        value: alias.email,
+                                    });
+                                });
+                            }
+                            catch (error) {
+                                // Skip domain if aliases can't be loaded
+                            }
+                        }
+                        return allAliases;
+                    }
+                    catch (error) {
+                        return [{ name: 'All aliases', value: '' }];
+                    }
+                },
+            },
         };
         // @ts-ignore (because of request)
         this.webhookMethods = {
             default: {
                 async checkExists() {
-                    // For EmailConnect, we don't need to register webhooks via API
-                    // The webhook URL is configured manually in EmailConnect dashboard
-                    return false;
+                    const webhookUrl = this.getNodeWebhookUrl('default');
+                    try {
+                        // Check if a webhook with this URL already exists
+                        const webhooks = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        return webhooks.some((webhook) => webhook.url === webhookUrl);
+                    }
+                    catch (error) {
+                        return false;
+                    }
                 },
                 async create() {
-                    // For EmailConnect, webhooks are configured manually in the dashboard
-                    // We just return true to indicate the webhook is "created"
-                    return true;
+                    const webhookUrl = this.getNodeWebhookUrl('default');
+                    const domainFilter = this.getNodeParameter('domainFilter');
+                    const aliasFilter = this.getNodeParameter('aliasFilter');
+                    try {
+                        // Create webhook in EmailConnect
+                        const webhookData = {
+                            url: webhookUrl,
+                            description: `n8n trigger webhook - ${this.getNode().name}`,
+                        };
+                        // If domain filter is specified, associate webhook with that domain
+                        if (domainFilter) {
+                            const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                            const domain = domains.find((d) => d.domain === domainFilter);
+                            if (domain) {
+                                webhookData.domainId = domain.id;
+                            }
+                        }
+                        // If alias filter is specified, associate webhook with that alias
+                        if (aliasFilter) {
+                            const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                            for (const domain of domains) {
+                                try {
+                                    const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domain.id}`);
+                                    const alias = aliases.find((a) => a.email === aliasFilter);
+                                    if (alias) {
+                                        webhookData.aliasId = alias.id;
+                                        break;
+                                    }
+                                }
+                                catch (error) {
+                                    // Continue to next domain
+                                }
+                            }
+                        }
+                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', webhookData);
+                        return true;
+                    }
+                    catch (error) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create webhook: ${error}`);
+                    }
                 },
                 async delete() {
-                    // For EmailConnect, webhooks are configured manually in the dashboard
-                    // We just return true to indicate the webhook is "deleted"
-                    return true;
+                    const webhookUrl = this.getNodeWebhookUrl('default');
+                    try {
+                        // Find and delete the webhook
+                        const webhooks = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        const webhook = webhooks.find((w) => w.url === webhookUrl);
+                        if (webhook) {
+                            await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhook.id}`);
+                        }
+                        return true;
+                    }
+                    catch (error) {
+                        // Don't throw error on delete failure
+                        return true;
+                    }
                 },
             },
         };
