@@ -32,13 +32,41 @@ export async function emailConnectApiRequest(
 		json: true,
 	};
 
+	// Debug logging
+	console.log('EmailConnect API Request:', {
+		method,
+		url: options.url,
+		hasApiKey: !!credentials.apiKey,
+		apiKeyPrefix: credentials.apiKey ? `${String(credentials.apiKey).substring(0, 8)}...` : 'NONE',
+		headers: { ...options.headers, 'X-API-KEY': credentials.apiKey ? '[REDACTED]' : 'NONE' },
+		body: Object.keys(body).length > 0 ? body : 'EMPTY',
+		qs: Object.keys(qs).length > 0 ? qs : 'EMPTY'
+	});
+
 	try {
 		if (Object.keys(body).length === 0) {
 			delete options.body;
 		}
 
-		return await this.helpers.httpRequest(options);
+		const response = await this.helpers.httpRequest(options);
+
+		// Debug logging for response
+		console.log('EmailConnect API Response:', {
+			url: options.url,
+			responseType: typeof response,
+			isArray: Array.isArray(response),
+			responseLength: Array.isArray(response) ? response.length : 'N/A',
+			response: response
+		});
+
+		return response;
 	} catch (error) {
+		console.error('EmailConnect API Error:', {
+			url: options.url,
+			error: error,
+			errorMessage: error instanceof Error ? error.message : String(error),
+			errorStack: error instanceof Error ? error.stack : 'No stack trace'
+		});
 		throw new NodeApiError(this.getNode(), error as any);
 	}
 }

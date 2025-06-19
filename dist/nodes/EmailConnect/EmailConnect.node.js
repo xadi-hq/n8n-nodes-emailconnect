@@ -356,14 +356,16 @@ class EmailConnect {
             loadOptions: {
                 async getDomains() {
                     try {
-                        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-                        console.log('EmailConnect getDomains response:', domains);
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        console.log('EmailConnect getDomains response:', response);
+                        // Extract domains array from response object
+                        const domains = response === null || response === void 0 ? void 0 : response.domains;
                         if (!Array.isArray(domains)) {
-                            console.error('EmailConnect getDomains: Expected array, got:', typeof domains, domains);
+                            console.error('EmailConnect getDomains: Expected domains array, got:', typeof domains, response);
                             return [];
                         }
                         return domains.map((domain) => ({
-                            name: `${domain.domain} (${domain.id})`,
+                            name: `${domain.domainName} (${domain.id})`,
                             value: domain.id,
                         }));
                     }
@@ -420,8 +422,9 @@ class EmailConnect {
             try {
                 if (resource === 'domain') {
                     if (operation === 'getAll') {
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-                        returnData.push(...responseData.map((item) => ({ json: item })));
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        const domains = (response === null || response === void 0 ? void 0 : response.domains) || [];
+                        returnData.push(...domains.map((item) => ({ json: item })));
                     }
                     else if (operation === 'get') {
                         const domainId = this.getNodeParameter('domainId', i);
