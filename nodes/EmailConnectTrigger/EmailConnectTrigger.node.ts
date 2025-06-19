@@ -99,7 +99,7 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'The events to listen for',
 			},
 			{
-				displayName: 'Domain',
+				displayName: 'Domain Name or ID',
 				name: 'domainId',
 				type: 'options',
 				typeOptions: {
@@ -110,7 +110,7 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Alias (Optional)',
+				displayName: 'Alias Name or ID',
 				name: 'aliasId',
 				type: 'options',
 				typeOptions: {
