@@ -13,36 +13,8 @@ import {
 import { emailConnectApiRequest } from '../EmailConnect/GenericFunctions';
 
 // Helper functions for webhook management
-async function verifyWebhook(this: IHookFunctions, webhookId: string): Promise<void> {
-	// Step 1: Trigger verification (EmailConnect will POST to our webhook)
-	await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${webhookId}/verify`);
-
-	// Step 2: Wait for verification POST to arrive and token to be stored
-	let attempts = 0;
-	const maxAttempts = 10;
-	let verificationToken: string | undefined;
-
-	while (attempts < maxAttempts) {
-		await new Promise(resolve => setTimeout(resolve, 1000));
-		verificationToken = this.getWorkflowStaticData('node').verificationToken as string;
-		if (verificationToken) {
-			break;
-		}
-		attempts++;
-	}
-
-	if (!verificationToken) {
-		throw new NodeOperationError(this.getNode(), 'Webhook verification failed: No verification token received');
-	}
-
-	// Step 3: Submit verification token
-	await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
-		verificationToken: verificationToken
-	});
-
-	// Step 4: Clean up verification token
-	delete this.getWorkflowStaticData('node').verificationToken;
-}
+// Note: Verification is now handled automatically during webhook creation
+// using the webhook ID's last 5 characters as the verification token
 
 
 
@@ -185,7 +157,8 @@ export class EmailConnectTrigger implements INodeType {
 				const webhookUrl = this.getNodeWebhookUrl('default');
 				try {
 					// Check if a webhook with this URL already exists
-					const webhooks = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+					const response = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+					const webhooks = response?.webhooks || [];
 					return webhooks.some((webhook: any) => webhook.url === webhookUrl);
 				} catch (error) {
 					return false;
@@ -239,6 +212,29 @@ export class EmailConnectTrigger implements INodeType {
 						await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
 							webhookId: webhookId
 						});
+					}
+
+					// Step 3: Automatically verify the webhook
+					// Verification token is always the last 5 characters of the webhook ID
+					const verificationToken = webhookId.slice(-5);
+
+					try {
+						// Trigger verification process
+						await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${webhookId}/verify`);
+
+						// Complete verification with the token
+						await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
+							verificationToken: verificationToken
+						});
+					} catch (verificationError) {
+						// If verification fails, clean up the webhook we created
+						try {
+							await emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
+						} catch (cleanupError) {
+							// Log cleanup failure but don't throw
+							console.warn('Failed to cleanup webhook after verification failure:', cleanupError);
+						}
+						throw new NodeOperationError(this.getNode(), `Webhook verification failed: ${verificationError}`);
 					}
 
 					// Store configuration for cleanup later
