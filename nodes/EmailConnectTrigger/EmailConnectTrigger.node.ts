@@ -6,8 +6,8 @@ import {
 	INodeTypeDescription,
 	IWebhookFunctions,
 	IWebhookResponseData,
-	NodeConnectionType,
 	NodeOperationError,
+	type NodeConnectionType,
 } from 'n8n-workflow';
 
 import { emailConnectApiRequest } from '../EmailConnect/GenericFunctions';
@@ -58,7 +58,7 @@ export class EmailConnectTrigger implements INodeType {
 			name: 'EmailConnect Trigger',
 		},
 		inputs: [],
-		outputs: [NodeConnectionType.Main],
+		outputs: ['main' as NodeConnectionType],
 		credentials: [
 			{
 				name: 'emailConnectApi',

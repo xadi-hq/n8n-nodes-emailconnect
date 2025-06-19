@@ -42,7 +42,7 @@ class EmailConnectTrigger {
                 name: 'EmailConnect Trigger',
             },
             inputs: [],
-            outputs: ["main" /* NodeConnectionType.Main */],
+            outputs: ['main'],
             credentials: [
                 {
                     name: 'emailConnectApi',

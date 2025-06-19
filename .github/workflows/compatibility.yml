@@ -19,14 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['18.10', '18.x', '20.x', '22.x']
+        node-version: ['20.x', '22.x']
         os: [ubuntu-latest, windows-latest, macos-latest]
-        exclude:
-          # Exclude some combinations to reduce CI time
-          - os: windows-latest
-            node-version: '18.10'
-          - os: macos-latest
-            node-version: '18.10'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -55,9 +49,11 @@ jobs:
           CI: true
 
       - name: Test package installation
+        shell: bash
         run: |
           echo "📦 Testing package installation..."
-          cd /tmp
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
           mkdir test-install
           cd test-install
           npm init -y

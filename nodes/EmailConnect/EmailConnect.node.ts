@@ -5,8 +5,8 @@ import {
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
-	NodeConnectionType,
 	NodeOperationError,
+	type NodeConnectionType,
 } from 'n8n-workflow';
 
 import { emailConnectApiRequest } from './GenericFunctions';
@@ -23,8 +23,8 @@ export class EmailConnect implements INodeType {
 		defaults: {
 			name: 'EmailConnect',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main' as NodeConnectionType],
+		outputs: ['main' as NodeConnectionType],
 		credentials: [
 			{
 				name: 'emailConnectApi',
