@@ -221,16 +221,16 @@ export class EmailConnectTrigger implements INodeType {
 						throw new NodeOperationError(this.getNode(), 'Alias ID is required when using existing alias mode');
 					}
 				} else if (aliasMode === 'create') {
-					// Create new alias first - construct full email from localPart + domain
+					// Create new alias first - use localPart and destinationEmail format
 					const localPart = this.getNodeParameter('newAliasLocalPart') as string;
 
 					try {
-						// Get domain name to construct the full email address
-						const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-						const email = `${localPart}@${domain.name}`;
-
-						const aliasData = { email };
-						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
+						const aliasData = {
+							domainId,
+							localPart,
+							destinationEmail: 'webhook-only@placeholder.local' // Required by API but not used for webhooks
+						};
+						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
 						aliasId = createdAlias.alias?.id || createdAlias.id;
 
 						if (!aliasId) {
@@ -242,12 +242,12 @@ export class EmailConnectTrigger implements INodeType {
 				} else if (aliasMode === 'domain') {
 					// Create catch-all alias for domain (*@domain.com)
 					try {
-						// Get domain name to construct the catch-all email address
-						const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-						const email = `*@${domain.name}`;
-
-						const aliasData = { email };
-						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
+						const aliasData = {
+							domainId,
+							localPart: '*',
+							destinationEmail: 'webhook-only@placeholder.local' // Required by API but not used for webhooks
+						};
+						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
 						aliasId = createdAlias.alias?.id || createdAlias.id;
 
 						if (!aliasId) {

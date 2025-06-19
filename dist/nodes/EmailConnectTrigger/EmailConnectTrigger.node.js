@@ -191,7 +191,7 @@ class EmailConnectTrigger {
                     }
                 },
                 async create() {
-                    var _a;
+                    var _a, _b;
                     const webhookUrl = this.getNodeWebhookUrl('default');
                     const domainId = this.getNodeParameter('domainId');
                     const aliasMode = this.getNodeParameter('aliasMode');
@@ -204,11 +204,15 @@ class EmailConnectTrigger {
                         }
                     }
                     else if (aliasMode === 'create') {
-                        // Create new alias first (for webhook purposes, no destination email needed)
+                        // Create new alias first - use localPart and destinationEmail format
                         const localPart = this.getNodeParameter('newAliasLocalPart');
                         try {
-                            const aliasData = { localPart };
-                            const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
+                            const aliasData = {
+                                domainId,
+                                localPart,
+                                destinationEmail: 'webhook-only@placeholder.local' // Required by API but not used for webhooks
+                            };
+                            const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
                             aliasId = ((_a = createdAlias.alias) === null || _a === void 0 ? void 0 : _a.id) || createdAlias.id;
                             if (!aliasId) {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Failed to create alias: No ID returned');
@@ -218,7 +222,24 @@ class EmailConnectTrigger {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create alias: ${error}`);
                         }
                     }
-                    // For 'domain' mode, aliasId remains empty and we use domain catch-all
+                    else if (aliasMode === 'domain') {
+                        // Create catch-all alias for domain (*@domain.com)
+                        try {
+                            const aliasData = {
+                                domainId,
+                                localPart: '*',
+                                destinationEmail: 'webhook-only@placeholder.local' // Required by API but not used for webhooks
+                            };
+                            const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
+                            aliasId = ((_b = createdAlias.alias) === null || _b === void 0 ? void 0 : _b.id) || createdAlias.id;
+                            if (!aliasId) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Failed to create catch-all alias: No ID returned');
+                            }
+                        }
+                        catch (error) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create catch-all alias: ${error}`);
+                        }
+                    }
                     try {
                         // Store previous webhook IDs for restoration on delete
                         let previousWebhookId = '';
@@ -513,9 +534,10 @@ class EmailConnectTrigger {
         const aliasMode = this.getNodeParameter('aliasMode');
         let aliasId = '';
         // Get aliasId based on mode
-        if (aliasMode === 'existing' || aliasMode === 'create') {
+        if (aliasMode === 'existing') {
             aliasId = this.getNodeParameter('aliasId');
         }
+        // For 'create' and 'domain' modes, the aliasId is stored in static data after creation
         // Always accept and process any data - return 200 with the received data
         if (!bodyData || typeof bodyData !== 'object') {
             // Return test response for empty/invalid data
