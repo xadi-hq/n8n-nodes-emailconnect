@@ -295,7 +295,17 @@ export class EmailConnectTrigger implements INodeType {
 						// Create new alias with webhook included
 						try {
 							const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-							const email = `${newAliasLocalPart}@${domain.domainName}`;
+							console.log('EmailConnect Trigger - Domain API response for alias creation:', domain);
+
+							// Check if domain response has the expected structure
+							// Single domain API uses 'domain' field, not 'domainName'
+							const domainName = domain.domain || domain.domainName;
+							if (!domain || !domainName) {
+								throw new NodeOperationError(this.getNode(),
+									`Invalid domain response: ${JSON.stringify(domain)}. Expected domain or domainName field.`);
+							}
+
+							const email = `${newAliasLocalPart}@${domainName}`;
 
 							const aliasData = {
 								domainId,
@@ -317,9 +327,18 @@ export class EmailConnectTrigger implements INodeType {
 						// Let's try different approaches for catch-all
 						try {
 							const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+							console.log('EmailConnect Trigger - Domain API response for catch-all:', domain);
+
+							// Check if domain response has the expected structure
+							// Single domain API uses 'domain' field, not 'domainName'
+							const domainName = domain.domain || domain.domainName;
+							if (!domain || !domainName) {
+								throw new NodeOperationError(this.getNode(),
+									`Invalid domain response: ${JSON.stringify(domain)}. Expected domain or domainName field.`);
+							}
 
 							// Try different catch-all formats that might be accepted by email validator
-							let email = `*@${domain.domainName}`;
+							let email = `*@${domainName}`;
 							let aliasData = {
 								domainId,
 								email,
@@ -332,7 +351,7 @@ export class EmailConnectTrigger implements INodeType {
 							} catch (emailFormatError) {
 								// If "*@domain.com" fails validation, try alternative approach
 								throw new NodeOperationError(this.getNode(),
-									`Catch-all alias creation failed: API doesn't accept "*@${domain.domainName}" as valid email format. ` +
+									`Catch-all alias creation failed: API doesn't accept "*@${domainName}" as valid email format. ` +
 									`This is an API limitation - catch-all aliases might need to be created manually in the EmailConnect UI.`
 								);
 							}
