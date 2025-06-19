@@ -221,11 +221,15 @@ export class EmailConnectTrigger implements INodeType {
 						throw new NodeOperationError(this.getNode(), 'Alias ID is required when using existing alias mode');
 					}
 				} else if (aliasMode === 'create') {
-					// Create new alias first (for webhook purposes, no destination email needed)
+					// Create new alias first - construct full email from localPart + domain
 					const localPart = this.getNodeParameter('newAliasLocalPart') as string;
 
 					try {
-						const aliasData = { localPart };
+						// Get domain name to construct the full email address
+						const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+						const email = `${localPart}@${domain.name}`;
+
+						const aliasData = { email };
 						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
 						aliasId = createdAlias.alias?.id || createdAlias.id;
 
@@ -235,8 +239,24 @@ export class EmailConnectTrigger implements INodeType {
 					} catch (error) {
 						throw new NodeOperationError(this.getNode(), `Failed to create alias: ${error}`);
 					}
+				} else if (aliasMode === 'domain') {
+					// Create catch-all alias for domain (*@domain.com)
+					try {
+						// Get domain name to construct the catch-all email address
+						const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+						const email = `*@${domain.name}`;
+
+						const aliasData = { email };
+						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
+						aliasId = createdAlias.alias?.id || createdAlias.id;
+
+						if (!aliasId) {
+							throw new NodeOperationError(this.getNode(), 'Failed to create catch-all alias: No ID returned');
+						}
+					} catch (error) {
+						throw new NodeOperationError(this.getNode(), `Failed to create catch-all alias: ${error}`);
+					}
 				}
-				// For 'domain' mode, aliasId remains empty and we use domain catch-all
 
 				try {
 					// Store previous webhook IDs for restoration on delete
@@ -537,9 +557,10 @@ export class EmailConnectTrigger implements INodeType {
 		let aliasId = '';
 
 		// Get aliasId based on mode
-		if (aliasMode === 'existing' || aliasMode === 'create') {
+		if (aliasMode === 'existing') {
 			aliasId = this.getNodeParameter('aliasId') as string;
 		}
+		// For 'create' and 'domain' modes, the aliasId is stored in static data after creation
 
 		// Always accept and process any data - return 200 with the received data
 		if (!bodyData || typeof bodyData !== 'object') {
