@@ -382,10 +382,12 @@ class EmailConnect {
                             console.log('EmailConnect getAliases: No domainId provided, returning empty array');
                             return [];
                         }
-                        const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-                        console.log('EmailConnect getAliases response:', aliases);
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        console.log('EmailConnect getAliases response:', response);
+                        // Extract aliases array from response object
+                        const aliases = response === null || response === void 0 ? void 0 : response.aliases;
                         if (!Array.isArray(aliases)) {
-                            console.error('EmailConnect getAliases: Expected array, got:', typeof aliases, aliases);
+                            console.error('EmailConnect getAliases: Expected aliases array, got:', typeof aliases, response);
                             return [];
                         }
                         return aliases.map((alias) => ({
@@ -453,8 +455,9 @@ class EmailConnect {
                 else if (resource === 'alias') {
                     if (operation === 'getAll') {
                         const domainId = this.getNodeParameter('domainId', i);
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-                        returnData.push(...responseData.map((item) => ({ json: item })));
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        const aliases = (response === null || response === void 0 ? void 0 : response.aliases) || [];
+                        returnData.push(...aliases.map((item) => ({ json: item })));
                     }
                     else if (operation === 'get') {
                         const aliasId = this.getNodeParameter('aliasId', i);

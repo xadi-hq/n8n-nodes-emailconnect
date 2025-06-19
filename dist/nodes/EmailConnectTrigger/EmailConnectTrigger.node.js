@@ -135,10 +135,12 @@ class EmailConnectTrigger {
                             console.log('EmailConnect getAliasesForDomain: No domainId provided, returning empty array');
                             return [];
                         }
-                        const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-                        console.log('EmailConnect getAliasesForDomain response:', aliases);
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        console.log('EmailConnect getAliasesForDomain response:', response);
+                        // Extract aliases array from response object
+                        const aliases = response === null || response === void 0 ? void 0 : response.aliases;
                         if (!Array.isArray(aliases)) {
-                            console.error('EmailConnect getAliasesForDomain: Expected array, got:', typeof aliases, aliases);
+                            console.error('EmailConnect getAliasesForDomain: Expected aliases array, got:', typeof aliases, response);
                             return [];
                         }
                         return aliases.map((alias) => ({

@@ -405,11 +405,13 @@ export class EmailConnect implements INodeType {
 						return [];
 					}
 
-					const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-					console.log('EmailConnect getAliases response:', aliases);
+					const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+					console.log('EmailConnect getAliases response:', response);
 
+					// Extract aliases array from response object
+					const aliases = response?.aliases;
 					if (!Array.isArray(aliases)) {
-						console.error('EmailConnect getAliases: Expected array, got:', typeof aliases, aliases);
+						console.error('EmailConnect getAliases: Expected aliases array, got:', typeof aliases, response);
 						return [];
 					}
 
@@ -477,8 +479,9 @@ export class EmailConnect implements INodeType {
 				} else if (resource === 'alias') {
 					if (operation === 'getAll') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
-						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-						returnData.push(...responseData.map((item: any) => ({ json: item })));
+						const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+						const aliases = response?.aliases || [];
+						returnData.push(...aliases.map((item: any) => ({ json: item })));
 					} else if (operation === 'get') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);

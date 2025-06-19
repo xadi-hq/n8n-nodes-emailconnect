@@ -156,11 +156,13 @@ export class EmailConnectTrigger implements INodeType {
 						return [];
 					}
 
-					const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-					console.log('EmailConnect getAliasesForDomain response:', aliases);
+					const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+					console.log('EmailConnect getAliasesForDomain response:', response);
 
+					// Extract aliases array from response object
+					const aliases = response?.aliases;
 					if (!Array.isArray(aliases)) {
-						console.error('EmailConnect getAliasesForDomain: Expected array, got:', typeof aliases, aliases);
+						console.error('EmailConnect getAliasesForDomain: Expected aliases array, got:', typeof aliases, response);
 						return [];
 					}
 
