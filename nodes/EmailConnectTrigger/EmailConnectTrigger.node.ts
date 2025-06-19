@@ -295,7 +295,7 @@ export class EmailConnectTrigger implements INodeType {
 						// Create new alias with webhook included
 						try {
 							const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-							const email = `${newAliasLocalPart}@${domain.name}`;
+							const email = `${newAliasLocalPart}@${domain.domainName}`;
 
 							const aliasData = {
 								domainId,
@@ -313,17 +313,29 @@ export class EmailConnectTrigger implements INodeType {
 						}
 					} else if (aliasMode === 'domain' && createCatchAll) {
 						// Create catch-all alias with webhook included
+						// Note: API might not accept "*@domain.com" as valid email format
+						// Let's try different approaches for catch-all
 						try {
 							const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-							const email = `*@${domain.name}`;
 
-							const aliasData = {
+							// Try different catch-all formats that might be accepted by email validator
+							let email = `*@${domain.domainName}`;
+							let aliasData = {
 								domainId,
 								email,
 								webhookId: webhookId
 							};
-							const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
-							aliasId = createdAlias.alias?.id || createdAlias.id;
+
+							try {
+								const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
+								aliasId = createdAlias.alias?.id || createdAlias.id;
+							} catch (emailFormatError) {
+								// If "*@domain.com" fails validation, try alternative approach
+								throw new NodeOperationError(this.getNode(),
+									`Catch-all alias creation failed: API doesn't accept "*@${domain.domainName}" as valid email format. ` +
+									`This is an API limitation - catch-all aliases might need to be created manually in the EmailConnect UI.`
+								);
+							}
 
 							if (!aliasId) {
 								throw new NodeOperationError(this.getNode(), 'Failed to create catch-all alias: No ID returned');

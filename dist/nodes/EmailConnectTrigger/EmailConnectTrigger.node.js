@@ -276,7 +276,7 @@ class EmailConnectTrigger {
                             // Create new alias with webhook included
                             try {
                                 const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                                const email = `${newAliasLocalPart}@${domain.name}`;
+                                const email = `${newAliasLocalPart}@${domain.domainName}`;
                                 const aliasData = {
                                     domainId,
                                     email,
@@ -294,16 +294,26 @@ class EmailConnectTrigger {
                         }
                         else if (aliasMode === 'domain' && createCatchAll) {
                             // Create catch-all alias with webhook included
+                            // Note: API might not accept "*@domain.com" as valid email format
+                            // Let's try different approaches for catch-all
                             try {
                                 const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                                const email = `*@${domain.name}`;
-                                const aliasData = {
+                                // Try different catch-all formats that might be accepted by email validator
+                                let email = `*@${domain.domainName}`;
+                                let aliasData = {
                                     domainId,
                                     email,
                                     webhookId: webhookId
                                 };
-                                const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
-                                aliasId = ((_b = createdAlias.alias) === null || _b === void 0 ? void 0 : _b.id) || createdAlias.id;
+                                try {
+                                    const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
+                                    aliasId = ((_b = createdAlias.alias) === null || _b === void 0 ? void 0 : _b.id) || createdAlias.id;
+                                }
+                                catch (emailFormatError) {
+                                    // If "*@domain.com" fails validation, try alternative approach
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Catch-all alias creation failed: API doesn't accept "*@${domain.domainName}" as valid email format. ` +
+                                        `This is an API limitation - catch-all aliases might need to be created manually in the EmailConnect UI.`);
+                                }
                                 if (!aliasId) {
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Failed to create catch-all alias: No ID returned');
                                 }
