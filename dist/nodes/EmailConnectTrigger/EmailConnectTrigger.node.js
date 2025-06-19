@@ -204,13 +204,15 @@ class EmailConnectTrigger {
                         }
                     }
                     else if (aliasMode === 'create') {
-                        // Create new alias first - use localPart and destinationEmail format
+                        // Create new alias first - construct full email and include domainId
                         const localPart = this.getNodeParameter('newAliasLocalPart');
                         try {
+                            // Get domain name to construct the full email address
+                            const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+                            const email = `${localPart}@${domain.name}`;
                             const aliasData = {
                                 domainId,
-                                localPart,
-                                destinationEmail: 'webhook-only@placeholder.local' // Required by API but not used for webhooks
+                                email
                             };
                             const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
                             aliasId = ((_a = createdAlias.alias) === null || _a === void 0 ? void 0 : _a.id) || createdAlias.id;
@@ -225,10 +227,12 @@ class EmailConnectTrigger {
                     else if (aliasMode === 'domain') {
                         // Create catch-all alias for domain (*@domain.com)
                         try {
+                            // Get domain name to construct the catch-all email address
+                            const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+                            const email = `*@${domain.name}`;
                             const aliasData = {
                                 domainId,
-                                localPart: '*',
-                                destinationEmail: 'webhook-only@placeholder.local' // Required by API but not used for webhooks
+                                email
                             };
                             const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases`, aliasData);
                             aliasId = ((_b = createdAlias.alias) === null || _b === void 0 ? void 0 : _b.id) || createdAlias.id;
