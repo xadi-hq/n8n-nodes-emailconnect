@@ -70,12 +70,6 @@ class EmailConnect {
                             action: 'Get a domain',
                         },
                         {
-                            name: 'Get Status',
-                            value: 'getStatus',
-                            description: 'Get domain verification status',
-                            action: 'Get domain status',
-                        },
-                        {
                             name: 'Update Configuration',
                             value: 'updateConfig',
                             description: 'Update domain configuration',
@@ -96,7 +90,7 @@ class EmailConnect {
                     displayOptions: {
                         show: {
                             resource: ['domain'],
-                            operation: ['get', 'getStatus', 'updateConfig'],
+                            operation: ['get', 'updateConfig'],
                         },
                     },
                     default: '',
@@ -402,13 +396,21 @@ class EmailConnect {
                 },
                 async getWebhooks() {
                     try {
-                        const webhooks = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        console.log('EmailConnect getWebhooks response:', response);
+                        // Extract webhooks array from response object
+                        const webhooks = response === null || response === void 0 ? void 0 : response.webhooks;
+                        if (!Array.isArray(webhooks)) {
+                            console.error('EmailConnect getWebhooks: Expected webhooks array, got:', typeof webhooks, response);
+                            return [];
+                        }
                         return webhooks.map((webhook) => ({
                             name: `${webhook.name || webhook.url} (${webhook.id})`,
                             value: webhook.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getWebhooks error:', error);
                         return [];
                     }
                 },
@@ -431,11 +433,6 @@ class EmailConnect {
                     else if (operation === 'get') {
                         const domainId = this.getNodeParameter('domainId', i);
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                        returnData.push({ json: responseData });
-                    }
-                    else if (operation === 'getStatus') {
-                        const domainId = this.getNodeParameter('domainId', i);
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}/status`);
                         returnData.push({ json: responseData });
                     }
                     else if (operation === 'updateConfig') {
@@ -487,8 +484,9 @@ class EmailConnect {
                 }
                 else if (resource === 'webhook') {
                     if (operation === 'getAll') {
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
-                        returnData.push(...responseData.map((item) => ({ json: item })));
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        const webhooks = (response === null || response === void 0 ? void 0 : response.webhooks) || [];
+                        returnData.push(...webhooks.map((item) => ({ json: item })));
                     }
                     else if (operation === 'get') {
                         const webhookId = this.getNodeParameter('webhookId', i);

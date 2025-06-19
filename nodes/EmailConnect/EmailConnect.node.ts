@@ -79,12 +79,6 @@ export class EmailConnect implements INodeType {
 						action: 'Get a domain',
 					},
 					{
-						name: 'Get Status',
-						value: 'getStatus',
-						description: 'Get domain verification status',
-						action: 'Get domain status',
-					},
-					{
 						name: 'Update Configuration',
 						value: 'updateConfig',
 						description: 'Update domain configuration',
@@ -106,7 +100,7 @@ export class EmailConnect implements INodeType {
 				displayOptions: {
 					show: {
 						resource: ['domain'],
-						operation: ['get', 'getStatus', 'updateConfig'],
+						operation: ['get', 'updateConfig'],
 					},
 				},
 				default: '',
@@ -427,12 +421,22 @@ export class EmailConnect implements INodeType {
 
 			async getWebhooks(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
-					const webhooks = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+					const response = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+					console.log('EmailConnect getWebhooks response:', response);
+
+					// Extract webhooks array from response object
+					const webhooks = response?.webhooks;
+					if (!Array.isArray(webhooks)) {
+						console.error('EmailConnect getWebhooks: Expected webhooks array, got:', typeof webhooks, response);
+						return [];
+					}
+
 					return webhooks.map((webhook: any) => ({
 						name: `${webhook.name || webhook.url} (${webhook.id})`,
 						value: webhook.id,
 					}));
 				} catch (error) {
+					console.error('EmailConnect getWebhooks error:', error);
 					return [];
 				}
 			},
@@ -456,10 +460,6 @@ export class EmailConnect implements INodeType {
 					} else if (operation === 'get') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-						returnData.push({ json: responseData });
-					} else if (operation === 'getStatus') {
-						const domainId = this.getNodeParameter('domainId', i) as string;
-						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}/status`);
 						returnData.push({ json: responseData });
 					} else if (operation === 'updateConfig') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
@@ -508,8 +508,9 @@ export class EmailConnect implements INodeType {
 					}
 				} else if (resource === 'webhook') {
 					if (operation === 'getAll') {
-						const responseData = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
-						returnData.push(...responseData.map((item: any) => ({ json: item })));
+						const response = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+						const webhooks = response?.webhooks || [];
+						returnData.push(...webhooks.map((item: any) => ({ json: item })));
 					} else if (operation === 'get') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
