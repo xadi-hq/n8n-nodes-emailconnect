@@ -127,11 +127,19 @@ export class EmailConnectTrigger implements INodeType {
 			async getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
 					const domains = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
+					console.log('EmailConnect getDomains response:', domains);
+
+					if (!Array.isArray(domains)) {
+						console.error('EmailConnect getDomains: Expected array, got:', typeof domains, domains);
+						return [];
+					}
+
 					return domains.map((domain: any) => ({
 						name: `${domain.domain} (${domain.id})`,
 						value: domain.id,
 					}));
 				} catch (error) {
+					console.error('EmailConnect getDomains error:', error);
 					return [];
 				}
 			},
@@ -139,16 +147,27 @@ export class EmailConnectTrigger implements INodeType {
 			async getAliasesForDomain(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
 					const domainId = this.getCurrentNodeParameter('domainId') as string;
+					console.log('EmailConnect getAliasesForDomain domainId:', domainId);
+
 					if (!domainId) {
+						console.log('EmailConnect getAliasesForDomain: No domainId provided, returning empty array');
 						return [];
 					}
 
 					const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+					console.log('EmailConnect getAliasesForDomain response:', aliases);
+
+					if (!Array.isArray(aliases)) {
+						console.error('EmailConnect getAliasesForDomain: Expected array, got:', typeof aliases, aliases);
+						return [];
+					}
+
 					return aliases.map((alias: any) => ({
 						name: `${alias.email} (${alias.id})`,
 						value: alias.id,
 					}));
 				} catch (error) {
+					console.error('EmailConnect getAliasesForDomain error:', error);
 					return [];
 				}
 			},

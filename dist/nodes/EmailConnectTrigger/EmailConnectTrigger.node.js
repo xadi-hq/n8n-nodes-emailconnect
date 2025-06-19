@@ -94,7 +94,7 @@ class EmailConnectTrigger {
                     description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
                 {
-                    displayName: 'Alias Name or ID (Optional)',
+                    displayName: 'Alias Name or ID',
                     name: 'aliasId',
                     type: 'options',
                     typeOptions: {
@@ -110,28 +110,42 @@ class EmailConnectTrigger {
                 async getDomains() {
                     try {
                         const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        console.log('EmailConnect getDomains response:', domains);
+                        if (!Array.isArray(domains)) {
+                            console.error('EmailConnect getDomains: Expected array, got:', typeof domains, domains);
+                            return [];
+                        }
                         return domains.map((domain) => ({
                             name: `${domain.domain} (${domain.id})`,
                             value: domain.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getDomains error:', error);
                         return [];
                     }
                 },
                 async getAliasesForDomain() {
                     try {
                         const domainId = this.getCurrentNodeParameter('domainId');
+                        console.log('EmailConnect getAliasesForDomain domainId:', domainId);
                         if (!domainId) {
+                            console.log('EmailConnect getAliasesForDomain: No domainId provided, returning empty array');
                             return [];
                         }
                         const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        console.log('EmailConnect getAliasesForDomain response:', aliases);
+                        if (!Array.isArray(aliases)) {
+                            console.error('EmailConnect getAliasesForDomain: Expected array, got:', typeof aliases, aliases);
+                            return [];
+                        }
                         return aliases.map((alias) => ({
                             name: `${alias.email} (${alias.id})`,
                             value: alias.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getAliasesForDomain error:', error);
                         return [];
                     }
                 },

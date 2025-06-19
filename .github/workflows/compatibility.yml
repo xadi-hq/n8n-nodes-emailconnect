@@ -1,0 +1,179 @@
+name: Compatibility Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run compatibility tests weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+
+env:
+  PNPM_VERSION: '9.1.0'
+
+jobs:
+  node-compatibility:
+    name: Node.js Compatibility
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18.10', '18.x', '20.x', '22.x']
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        exclude:
+          # Exclude some combinations to reduce CI time
+          - os: windows-latest
+            node-version: '18.10'
+          - os: macos-latest
+            node-version: '18.10'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run linting
+        run: pnpm run lint
+
+      - name: Run type checking
+        run: npx tsc --noEmit
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test
+        env:
+          CI: true
+
+      - name: Test package installation
+        run: |
+          echo "📦 Testing package installation..."
+          cd /tmp
+          mkdir test-install
+          cd test-install
+          npm init -y
+          npm install ${{ github.workspace }}
+          echo "✅ Package installation successful"
+
+  n8n-compatibility:
+    name: n8n Version Compatibility
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        n8n-version: ['1.0.0', '1.x', 'latest']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install n8n ${{ matrix.n8n-version }}
+        run: |
+          echo "🔧 Installing n8n ${{ matrix.n8n-version }}..."
+          pnpm add -D n8n@${{ matrix.n8n-version }}
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Test with n8n ${{ matrix.n8n-version }}
+        run: |
+          echo "🧪 Testing compatibility with n8n ${{ matrix.n8n-version }}..."
+          pnpm run test
+          echo "✅ Compatibility test passed"
+
+  package-validation:
+    name: Package Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        run: pnpm run build
+
+      - name: Validate package structure
+        run: |
+          echo "📋 Validating package structure..."
+          
+          # Check required files exist
+          test -f package.json || (echo "❌ package.json missing" && exit 1)
+          test -f README.md || (echo "❌ README.md missing" && exit 1)
+          test -f LICENSE || (echo "❌ LICENSE missing" && exit 1)
+          test -d dist || (echo "❌ dist directory missing" && exit 1)
+          
+          # Check n8n specific files
+          test -f dist/credentials/EmailConnectApi.credentials.js || (echo "❌ Credentials file missing" && exit 1)
+          test -f dist/nodes/EmailConnect/EmailConnect.node.js || (echo "❌ EmailConnect node missing" && exit 1)
+          test -f dist/nodes/EmailConnectTrigger/EmailConnectTrigger.node.js || (echo "❌ EmailConnectTrigger node missing" && exit 1)
+          
+          echo "✅ Package structure validation passed"
+
+      - name: Test package metadata
+        run: |
+          echo "📋 Validating package metadata..."
+          
+          # Check package.json fields
+          node -e "
+            const pkg = require('./package.json');
+            if (!pkg.name) throw new Error('Package name missing');
+            if (!pkg.version) throw new Error('Package version missing');
+            if (!pkg.description) throw new Error('Package description missing');
+            if (!pkg.keywords || !pkg.keywords.includes('n8n-community-node-package')) {
+              throw new Error('Missing n8n-community-node-package keyword');
+            }
+            if (!pkg.n8n) throw new Error('n8n configuration missing');
+            if (!pkg.n8n.credentials || pkg.n8n.credentials.length === 0) {
+              throw new Error('n8n credentials configuration missing');
+            }
+            if (!pkg.n8n.nodes || pkg.n8n.nodes.length === 0) {
+              throw new Error('n8n nodes configuration missing');
+            }
+            console.log('✅ Package metadata validation passed');
+          "
+
+      - name: Dry run publish
+        run: |
+          echo "🧪 Testing npm publish (dry run)..."
+          pnpm publish --dry-run
+          echo "✅ Publish dry run successful"

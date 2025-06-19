@@ -357,28 +357,42 @@ class EmailConnect {
                 async getDomains() {
                     try {
                         const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        console.log('EmailConnect getDomains response:', domains);
+                        if (!Array.isArray(domains)) {
+                            console.error('EmailConnect getDomains: Expected array, got:', typeof domains, domains);
+                            return [];
+                        }
                         return domains.map((domain) => ({
                             name: `${domain.domain} (${domain.id})`,
                             value: domain.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getDomains error:', error);
                         return [];
                     }
                 },
                 async getAliases() {
                     try {
                         const domainId = this.getCurrentNodeParameter('domainId');
+                        console.log('EmailConnect getAliases domainId:', domainId);
                         if (!domainId) {
+                            console.log('EmailConnect getAliases: No domainId provided, returning empty array');
                             return [];
                         }
                         const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        console.log('EmailConnect getAliases response:', aliases);
+                        if (!Array.isArray(aliases)) {
+                            console.error('EmailConnect getAliases: Expected array, got:', typeof aliases, aliases);
+                            return [];
+                        }
                         return aliases.map((alias) => ({
                             name: `${alias.email} (${alias.id})`,
                             value: alias.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getAliases error:', error);
                         return [];
                     }
                 },
