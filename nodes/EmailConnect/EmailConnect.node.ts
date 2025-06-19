@@ -306,9 +306,12 @@ export class EmailConnect implements INodeType {
 
 			// Webhook ID field
 			{
-				displayName: 'Webhook ID',
+				displayName: 'Webhook Name or ID',
 				name: 'webhookId',
-				type: 'string',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getWebhooks',
+				},
 				required: true,
 				displayOptions: {
 					show: {
@@ -317,10 +320,25 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: '',
-				description: 'The ID of the webhook',
+				description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 
 			// Webhook creation/update fields
+			{
+				displayName: 'Name',
+				name: 'name',
+				type: 'string',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['webhook'],
+						operation: ['create', 'update'],
+					},
+				},
+				default: '',
+				description: 'A friendly name for the webhook',
+				placeholder: 'Main email webhook',
+			},
 			{
 				displayName: 'URL',
 				name: 'url',
@@ -378,6 +396,18 @@ export class EmailConnect implements INodeType {
 					return aliases.map((alias: any) => ({
 						name: `${alias.email} (${alias.id})`,
 						value: alias.id,
+					}));
+				} catch (error) {
+					return [];
+				}
+			},
+
+			async getWebhooks(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				try {
+					const webhooks = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+					return webhooks.map((webhook: any) => ({
+						name: `${webhook.name || webhook.url} (${webhook.id})`,
+						value: webhook.id,
 					}));
 				} catch (error) {
 					return [];
@@ -460,22 +490,24 @@ export class EmailConnect implements INodeType {
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
 						returnData.push({ json: responseData });
 					} else if (operation === 'create') {
+						const name = this.getNodeParameter('name', i) as string;
 						const url = this.getNodeParameter('url', i) as string;
 						const description = this.getNodeParameter('description', i) as string;
-						
-						const body: any = { url };
+
+						const body: any = { name, url };
 						if (description) body.description = description;
-						
+
 						const responseData = await emailConnectApiRequest.call(this, 'POST', '/api/webhooks', body);
 						returnData.push({ json: responseData });
 					} else if (operation === 'update') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
+						const name = this.getNodeParameter('name', i) as string;
 						const url = this.getNodeParameter('url', i) as string;
 						const description = this.getNodeParameter('description', i) as string;
-						
-						const body: any = { url };
+
+						const body: any = { name, url };
 						if (description) body.description = description;
-						
+
 						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body);
 						returnData.push({ json: responseData });
 					} else if (operation === 'delete') {

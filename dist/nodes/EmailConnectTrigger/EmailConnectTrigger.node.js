@@ -29,37 +29,6 @@ async function verifyWebhook(webhookId) {
     // Step 4: Clean up verification token
     delete this.getWorkflowStaticData('node').verificationToken;
 }
-async function findDomainId(domainName) {
-    try {
-        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-        const domain = domains.find((d) => d.domain === domainName);
-        return domain ? domain.id : null;
-    }
-    catch (error) {
-        return null;
-    }
-}
-async function findAliasId(aliasEmail) {
-    try {
-        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-        for (const domain of domains) {
-            try {
-                const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domain.id}`);
-                const alias = aliases.find((a) => a.email === aliasEmail);
-                if (alias) {
-                    return alias.id;
-                }
-            }
-            catch (error) {
-                // Continue to next domain
-            }
-        }
-        return null;
-    }
-    catch (error) {
-        return null;
-    }
-}
 class EmailConnectTrigger {
     constructor() {
         this.description = {
@@ -114,24 +83,25 @@ class EmailConnectTrigger {
                     description: 'The events to listen for',
                 },
                 {
-                    displayName: 'Domain Filter Name or ID',
-                    name: 'domainFilter',
+                    displayName: 'Domain',
+                    name: 'domainId',
                     type: 'options',
                     typeOptions: {
                         loadOptionsMethod: 'getDomains',
                     },
+                    required: true,
                     default: '',
-                    description: 'Select domain for catchall webhook assignment. If alias filter is also specified, this will be ignored. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                    description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
                 {
-                    displayName: 'Alias Filter Name or ID',
-                    name: 'aliasFilter',
+                    displayName: 'Alias (Optional)',
+                    name: 'aliasId',
                     type: 'options',
                     typeOptions: {
-                        loadOptionsMethod: 'getAllAliases',
+                        loadOptionsMethod: 'getAliasesForDomain',
                     },
                     default: '',
-                    description: 'Select specific alias for webhook assignment (takes priority over domain filter). Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                    description: 'Optionally select a specific alias to configure instead of the domain catch-all. If selected, only emails to this alias will trigger the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
             ],
         };
@@ -140,40 +110,29 @@ class EmailConnectTrigger {
                 async getDomains() {
                     try {
                         const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-                        const options = domains.map((domain) => ({
-                            name: domain.domain,
-                            value: domain.domain,
+                        return domains.map((domain) => ({
+                            name: `${domain.domain} (${domain.id})`,
+                            value: domain.id,
                         }));
-                        // Add "All domains" option
-                        options.unshift({ name: 'All domains', value: '' });
-                        return options;
                     }
                     catch (error) {
-                        return [{ name: 'All Domains', value: '' }];
+                        return [];
                     }
                 },
-                async getAllAliases() {
+                async getAliasesForDomain() {
                     try {
-                        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-                        const allAliases = [{ name: 'All Aliases', value: '' }];
-                        for (const domain of domains) {
-                            try {
-                                const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domain.id}`);
-                                aliases.forEach((alias) => {
-                                    allAliases.push({
-                                        name: alias.email,
-                                        value: alias.email,
-                                    });
-                                });
-                            }
-                            catch (error) {
-                                // Skip domain if aliases can't be loaded
-                            }
+                        const domainId = this.getCurrentNodeParameter('domainId');
+                        if (!domainId) {
+                            return [];
                         }
-                        return allAliases;
+                        const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        return aliases.map((alias) => ({
+                            name: `${alias.email} (${alias.id})`,
+                            value: alias.id,
+                        }));
                     }
                     catch (error) {
-                        return [{ name: 'All Aliases', value: '' }];
+                        return [];
                     }
                 },
             },
@@ -194,84 +153,105 @@ class EmailConnectTrigger {
                 },
                 async create() {
                     const webhookUrl = this.getNodeWebhookUrl('default');
-                    const domainFilter = this.getNodeParameter('domainFilter');
-                    const aliasFilter = this.getNodeParameter('aliasFilter');
+                    const domainId = this.getNodeParameter('domainId');
+                    const aliasId = this.getNodeParameter('aliasId');
                     try {
-                        // Step 1: Create webhook in EmailConnect
-                        const webhookData = {
-                            url: webhookUrl,
-                            description: `n8n trigger webhook - ${this.getNode().name}`,
-                        };
-                        const createdWebhook = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', webhookData);
-                        const webhookId = createdWebhook.id;
-                        // Step 2: Verify webhook
-                        await verifyWebhook.call(this, webhookId);
-                        // Step 3: Assign webhook to domain/alias based on filters
-                        if (aliasFilter) {
-                            // Priority: Assign to specific alias if specified
-                            const aliasId = await findAliasId.call(this, aliasFilter);
-                            if (aliasId) {
-                                await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-                                    webhookId: webhookId
-                                });
+                        // Store previous webhook ID for restoration on delete
+                        let previousWebhookId = '';
+                        if (aliasId) {
+                            // Get current alias webhook for restoration
+                            try {
+                                const alias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
+                                previousWebhookId = alias.webhookId || '';
                             }
-                        }
-                        else if (domainFilter) {
-                            // Fallback: Assign to domain catchall if specified
-                            const domainId = await findDomainId.call(this, domainFilter);
-                            if (domainId) {
-                                await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-                                    webhookId: webhookId
-                                });
+                            catch (error) {
+                                // Ignore error, continue with empty previous webhook ID
                             }
                         }
                         else {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Either domain or alias filter must be specified for webhook assignment');
+                            // Get current domain webhook for restoration
+                            try {
+                                const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+                                previousWebhookId = domain.webhookId || '';
+                            }
+                            catch (error) {
+                                // Ignore error, continue with empty previous webhook ID
+                            }
                         }
-                        // Store webhook ID for cleanup later
+                        // Step 1: Create webhook in EmailConnect
+                        const webhookData = {
+                            name: `n8n trigger webhook - ${this.getNode().name}`,
+                            url: webhookUrl,
+                            description: `Auto-created webhook for n8n trigger node: ${this.getNode().name}`,
+                        };
+                        const createdWebhook = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', webhookData);
+                        const webhookId = createdWebhook.webhook.id;
+                        // Step 2: Assign webhook to domain or alias
+                        if (aliasId) {
+                            // Update specific alias webhook endpoint
+                            await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
+                                webhookId: webhookId
+                            });
+                        }
+                        else {
+                            // Update domain catch-all webhook endpoint
+                            await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
+                                webhookId: webhookId
+                            });
+                        }
+                        // Store configuration for cleanup later
+                        this.getWorkflowStaticData('node').domainId = domainId;
+                        this.getWorkflowStaticData('node').aliasId = aliasId;
                         this.getWorkflowStaticData('node').webhookId = webhookId;
+                        this.getWorkflowStaticData('node').previousWebhookId = previousWebhookId;
                         return true;
                     }
                     catch (error) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create and configure webhook: ${error}`);
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to configure webhook endpoint: ${error}`);
                     }
                 },
                 async delete() {
                     try {
-                        // Get stored webhook ID
+                        // Get stored configuration
+                        const domainId = this.getWorkflowStaticData('node').domainId;
+                        const aliasId = this.getWorkflowStaticData('node').aliasId;
                         const webhookId = this.getWorkflowStaticData('node').webhookId;
-                        if (webhookId) {
-                            // Step 1: Remove webhook assignment from domain/alias
-                            const domainFilter = this.getNodeParameter('domainFilter');
-                            const aliasFilter = this.getNodeParameter('aliasFilter');
-                            if (aliasFilter) {
-                                const aliasId = await findAliasId.call(this, aliasFilter);
-                                if (aliasId) {
-                                    // Remove webhook from alias (set to null/empty)
-                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-                                        webhookId: null
-                                    });
+                        const previousWebhookId = this.getWorkflowStaticData('node').previousWebhookId;
+                        if (domainId) {
+                            // Restore previous webhook ID
+                            if (aliasId) {
+                                // Restore alias webhook
+                                await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
+                                    webhookId: previousWebhookId || null
+                                });
+                            }
+                            else {
+                                // Restore domain webhook
+                                await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
+                                    webhookId: previousWebhookId || null
+                                });
+                            }
+                            // Delete the webhook we created
+                            if (webhookId) {
+                                try {
+                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
+                                }
+                                catch (error) {
+                                    // Log but don't fail if webhook deletion fails
+                                    console.warn('Failed to delete webhook:', error);
                                 }
                             }
-                            else if (domainFilter) {
-                                const domainId = await findDomainId.call(this, domainFilter);
-                                if (domainId) {
-                                    // Remove webhook from domain (set to null/empty)
-                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-                                        webhookId: null
-                                    });
-                                }
-                            }
-                            // Step 2: Delete the webhook itself
-                            await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
-                            // Step 3: Clean up stored webhook ID
+                            // Clean up stored configuration
+                            delete this.getWorkflowStaticData('node').domainId;
+                            delete this.getWorkflowStaticData('node').aliasId;
                             delete this.getWorkflowStaticData('node').webhookId;
+                            delete this.getWorkflowStaticData('node').previousWebhookId;
                         }
                         return true;
                     }
                     catch (error) {
                         // Don't throw error on delete failure - just log and continue
-                        console.warn('Failed to clean up webhook:', error);
+                        console.warn('Failed to restore previous webhook configuration:', error);
                         return true;
                     }
                 },
@@ -282,25 +262,13 @@ class EmailConnectTrigger {
         var _a, _b, _c, _d, _e;
         const bodyData = this.getBodyData();
         const events = this.getNodeParameter('events');
-        const domainFilter = this.getNodeParameter('domainFilter');
-        const aliasFilter = this.getNodeParameter('aliasFilter');
+        const domainId = this.getNodeParameter('domainId');
+        const aliasId = this.getNodeParameter('aliasId');
         // Validate that we have the expected EmailConnect webhook data
         if (!bodyData || typeof bodyData !== 'object') {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invalid webhook payload received');
         }
         const emailData = bodyData;
-        // Handle webhook verification if this is a verification request
-        if (emailData.verification_token) {
-            // Store verification token for later use
-            this.getWorkflowStaticData('node').verificationToken = emailData.verification_token;
-            // Return success response for verification
-            return {
-                webhookResponse: {
-                    status: 200,
-                    body: { verified: true },
-                },
-            };
-        }
         // Check if this event type should trigger the workflow
         const eventType = emailData.status || 'email.received';
         if (!events.includes(eventType)) {
@@ -308,17 +276,14 @@ class EmailConnectTrigger {
                 noWebhookResponse: true,
             };
         }
-        // Apply domain filter if specified
-        if (domainFilter && emailData.recipient) {
-            const recipientDomain = emailData.recipient.split('@')[1];
-            if (recipientDomain !== domainFilter) {
-                return {
-                    noWebhookResponse: true,
-                };
-            }
+        // Apply domain filter - check if email is for the configured domain
+        if (domainId && emailData.domainId !== domainId) {
+            return {
+                noWebhookResponse: true,
+            };
         }
-        // Apply alias filter if specified
-        if (aliasFilter && emailData.recipient !== aliasFilter) {
+        // Apply alias filter if specified - check if email is for the configured alias
+        if (aliasId && emailData.aliasId !== aliasId) {
             return {
                 noWebhookResponse: true,
             };

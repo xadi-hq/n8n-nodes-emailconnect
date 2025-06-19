@@ -5,6 +5,7 @@ export declare class EmailConnect implements INodeType {
         loadOptions: {
             getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
             getAliases(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+            getWebhooks(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
         };
     };
     execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]>;

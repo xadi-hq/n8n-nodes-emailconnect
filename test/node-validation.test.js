@@ -155,17 +155,20 @@ describe('EmailConnect Node Validation', () => {
       expect(eventValues).toContain('email.failed');
     });
 
-    test('should have domain and alias filters', () => {
+    test('should have domain and alias selection', () => {
       const description = emailConnectTriggerNode.description;
-      
-      const domainFilter = description.properties.find(p => p.name === 'domainFilter');
-      const aliasFilter = description.properties.find(p => p.name === 'aliasFilter');
-      
-      expect(domainFilter).toBeDefined();
-      expect(domainFilter.type).toBe('string');
-      
-      expect(aliasFilter).toBeDefined();
-      expect(aliasFilter.type).toBe('string');
+
+      const domainId = description.properties.find(p => p.name === 'domainId');
+      const aliasId = description.properties.find(p => p.name === 'aliasId');
+
+      expect(domainId).toBeDefined();
+      expect(domainId.type).toBe('options');
+      expect(domainId.required).toBe(true);
+      expect(domainId.typeOptions.loadOptionsMethod).toBe('getDomains');
+
+      expect(aliasId).toBeDefined();
+      expect(aliasId.type).toBe('options');
+      expect(aliasId.typeOptions.loadOptionsMethod).toBe('getAliasesForDomain');
     });
   });
 
@@ -184,6 +187,21 @@ describe('EmailConnect Node Validation', () => {
       expect(typeof emailConnectTriggerNode.webhookMethods.default.checkExists).toBe('function');
       expect(typeof emailConnectTriggerNode.webhookMethods.default.create).toBe('function');
       expect(typeof emailConnectTriggerNode.webhookMethods.default.delete).toBe('function');
+    });
+
+    test('EmailConnect node should have loadOptions methods', () => {
+      expect(emailConnectNode.methods).toBeDefined();
+      expect(emailConnectNode.methods.loadOptions).toBeDefined();
+      expect(typeof emailConnectNode.methods.loadOptions.getDomains).toBe('function');
+      expect(typeof emailConnectNode.methods.loadOptions.getAliases).toBe('function');
+      expect(typeof emailConnectNode.methods.loadOptions.getWebhooks).toBe('function');
+    });
+
+    test('EmailConnect trigger should have loadOptions methods', () => {
+      expect(emailConnectTriggerNode.methods).toBeDefined();
+      expect(emailConnectTriggerNode.methods.loadOptions).toBeDefined();
+      expect(typeof emailConnectTriggerNode.methods.loadOptions.getDomains).toBe('function');
+      expect(typeof emailConnectTriggerNode.methods.loadOptions.getAliasesForDomain).toBe('function');
     });
   });
 });

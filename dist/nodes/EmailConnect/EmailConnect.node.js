@@ -289,9 +289,12 @@ class EmailConnect {
                 },
                 // Webhook ID field
                 {
-                    displayName: 'Webhook ID',
+                    displayName: 'Webhook Name or ID',
                     name: 'webhookId',
-                    type: 'string',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getWebhooks',
+                    },
                     required: true,
                     displayOptions: {
                         show: {
@@ -300,9 +303,24 @@ class EmailConnect {
                         },
                     },
                     default: '',
-                    description: 'The ID of the webhook',
+                    description: 'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
                 },
                 // Webhook creation/update fields
+                {
+                    displayName: 'Name',
+                    name: 'name',
+                    type: 'string',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['webhook'],
+                            operation: ['create', 'update'],
+                        },
+                    },
+                    default: '',
+                    description: 'A friendly name for the webhook',
+                    placeholder: 'Main email webhook',
+                },
                 {
                     displayName: 'URL',
                     name: 'url',
@@ -358,6 +376,18 @@ class EmailConnect {
                         return aliases.map((alias) => ({
                             name: `${alias.email} (${alias.id})`,
                             value: alias.id,
+                        }));
+                    }
+                    catch (error) {
+                        return [];
+                    }
+                },
+                async getWebhooks() {
+                    try {
+                        const webhooks = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        return webhooks.map((webhook) => ({
+                            name: `${webhook.name || webhook.url} (${webhook.id})`,
+                            value: webhook.id,
                         }));
                     }
                     catch (error) {
@@ -446,9 +476,10 @@ class EmailConnect {
                         returnData.push({ json: responseData });
                     }
                     else if (operation === 'create') {
+                        const name = this.getNodeParameter('name', i);
                         const url = this.getNodeParameter('url', i);
                         const description = this.getNodeParameter('description', i);
-                        const body = { url };
+                        const body = { name, url };
                         if (description)
                             body.description = description;
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', body);
@@ -456,9 +487,10 @@ class EmailConnect {
                     }
                     else if (operation === 'update') {
                         const webhookId = this.getNodeParameter('webhookId', i);
+                        const name = this.getNodeParameter('name', i);
                         const url = this.getNodeParameter('url', i);
                         const description = this.getNodeParameter('description', i);
-                        const body = { url };
+                        const body = { name, url };
                         if (description)
                             body.description = description;
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body);

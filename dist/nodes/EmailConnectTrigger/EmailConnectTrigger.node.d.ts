@@ -4,7 +4,7 @@ export declare class EmailConnectTrigger implements INodeType {
     methods: {
         loadOptions: {
             getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
-            getAllAliases(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+            getAliasesForDomain(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
         };
     };
     webhookMethods: {

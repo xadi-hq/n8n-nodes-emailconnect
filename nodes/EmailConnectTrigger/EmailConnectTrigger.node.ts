@@ -44,35 +44,7 @@ async function verifyWebhook(this: IHookFunctions, webhookId: string): Promise<v
 	delete this.getWorkflowStaticData('node').verificationToken;
 }
 
-async function findDomainId(this: IHookFunctions, domainName: string): Promise<string | null> {
-	try {
-		const domains = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
-		const domain = domains.find((d: any) => d.domain === domainName);
-		return domain ? domain.id : null;
-	} catch (error) {
-		return null;
-	}
-}
 
-async function findAliasId(this: IHookFunctions, aliasEmail: string): Promise<string | null> {
-	try {
-		const domains = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
-		for (const domain of domains) {
-			try {
-				const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domain.id}`);
-				const alias = aliases.find((a: any) => a.email === aliasEmail);
-				if (alias) {
-					return alias.id;
-				}
-			} catch (error) {
-				// Continue to next domain
-			}
-		}
-		return null;
-	} catch (error) {
-		return null;
-	}
-}
 
 export class EmailConnectTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -127,24 +99,25 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'The events to listen for',
 			},
 			{
-				displayName: 'Domain Filter Name or ID',
-				name: 'domainFilter',
+				displayName: 'Domain',
+				name: 'domainId',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'getDomains',
 				},
+				required: true,
 				default: '',
-				description: 'Select domain for catchall webhook assignment. If alias filter is also specified, this will be ignored. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+				description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Alias Filter Name or ID',
-				name: 'aliasFilter',
+				displayName: 'Alias (Optional)',
+				name: 'aliasId',
 				type: 'options',
 				typeOptions: {
-					loadOptionsMethod: 'getAllAliases',
+					loadOptionsMethod: 'getAliasesForDomain',
 				},
 				default: '',
-				description: 'Select specific alias for webhook assignment (takes priority over domain filter). Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+				description: 'Optionally select a specific alias to configure instead of the domain catch-all. If selected, only emails to this alias will trigger the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 		],
 	};
@@ -154,40 +127,29 @@ export class EmailConnectTrigger implements INodeType {
 			async getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
 					const domains = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
-					const options = domains.map((domain: any) => ({
-						name: domain.domain,
-						value: domain.domain,
+					return domains.map((domain: any) => ({
+						name: `${domain.domain} (${domain.id})`,
+						value: domain.id,
 					}));
-					// Add "All domains" option
-					options.unshift({ name: 'All domains', value: '' });
-					return options;
 				} catch (error) {
-					return [{ name: 'All Domains', value: '' }];
+					return [];
 				}
 			},
 
-			async getAllAliases(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+			async getAliasesForDomain(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
-					const domains = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
-					const allAliases: INodePropertyOptions[] = [{ name: 'All Aliases', value: '' }];
-
-					for (const domain of domains) {
-						try {
-							const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domain.id}`);
-							aliases.forEach((alias: any) => {
-								allAliases.push({
-									name: alias.email,
-									value: alias.email,
-								});
-							});
-						} catch (error) {
-							// Skip domain if aliases can't be loaded
-						}
+					const domainId = this.getCurrentNodeParameter('domainId') as string;
+					if (!domainId) {
+						return [];
 					}
 
-					return allAliases;
+					const aliases = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+					return aliases.map((alias: any) => ({
+						name: `${alias.email} (${alias.id})`,
+						value: alias.id,
+					}));
 				} catch (error) {
-					return [{ name: 'All Aliases', value: '' }];
+					return [];
 				}
 			},
 		},
@@ -208,92 +170,110 @@ export class EmailConnectTrigger implements INodeType {
 			},
 			async create(this: IHookFunctions): Promise<boolean> {
 				const webhookUrl = this.getNodeWebhookUrl('default');
-				const domainFilter = this.getNodeParameter('domainFilter') as string;
-				const aliasFilter = this.getNodeParameter('aliasFilter') as string;
+				const domainId = this.getNodeParameter('domainId') as string;
+				const aliasId = this.getNodeParameter('aliasId') as string;
 
 				try {
+					// Store previous webhook ID for restoration on delete
+					let previousWebhookId = '';
+
+					if (aliasId) {
+						// Get current alias webhook for restoration
+						try {
+							const alias = await emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
+							previousWebhookId = alias.webhookId || '';
+						} catch (error) {
+							// Ignore error, continue with empty previous webhook ID
+						}
+					} else {
+						// Get current domain webhook for restoration
+						try {
+							const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+							previousWebhookId = domain.webhookId || '';
+						} catch (error) {
+							// Ignore error, continue with empty previous webhook ID
+						}
+					}
+
 					// Step 1: Create webhook in EmailConnect
 					const webhookData = {
+						name: `n8n trigger webhook - ${this.getNode().name}`,
 						url: webhookUrl,
-						description: `n8n trigger webhook - ${this.getNode().name}`,
+						description: `Auto-created webhook for n8n trigger node: ${this.getNode().name}`,
 					};
 
 					const createdWebhook = await emailConnectApiRequest.call(this, 'POST', '/api/webhooks', webhookData);
-					const webhookId = createdWebhook.id;
+					const webhookId = createdWebhook.webhook.id;
 
-					// Step 2: Verify webhook
-					await verifyWebhook.call(this, webhookId);
-
-					// Step 3: Assign webhook to domain/alias based on filters
-					if (aliasFilter) {
-						// Priority: Assign to specific alias if specified
-						const aliasId = await findAliasId.call(this, aliasFilter);
-						if (aliasId) {
-							await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-								webhookId: webhookId
-							});
-						}
-					} else if (domainFilter) {
-						// Fallback: Assign to domain catchall if specified
-						const domainId = await findDomainId.call(this, domainFilter);
-						if (domainId) {
-							await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-								webhookId: webhookId
-							});
-						}
+					// Step 2: Assign webhook to domain or alias
+					if (aliasId) {
+						// Update specific alias webhook endpoint
+						await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
+							webhookId: webhookId
+						});
 					} else {
-						throw new NodeOperationError(this.getNode(), 'Either domain or alias filter must be specified for webhook assignment');
+						// Update domain catch-all webhook endpoint
+						await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
+							webhookId: webhookId
+						});
 					}
 
-					// Store webhook ID for cleanup later
+					// Store configuration for cleanup later
+					this.getWorkflowStaticData('node').domainId = domainId;
+					this.getWorkflowStaticData('node').aliasId = aliasId;
 					this.getWorkflowStaticData('node').webhookId = webhookId;
+					this.getWorkflowStaticData('node').previousWebhookId = previousWebhookId;
 
 					return true;
 				} catch (error) {
-					throw new NodeOperationError(this.getNode(), `Failed to create and configure webhook: ${error}`);
+					throw new NodeOperationError(this.getNode(), `Failed to configure webhook endpoint: ${error}`);
 				}
 			},
 
 
 			async delete(this: IHookFunctions): Promise<boolean> {
 				try {
-					// Get stored webhook ID
+					// Get stored configuration
+					const domainId = this.getWorkflowStaticData('node').domainId as string;
+					const aliasId = this.getWorkflowStaticData('node').aliasId as string;
 					const webhookId = this.getWorkflowStaticData('node').webhookId as string;
+					const previousWebhookId = this.getWorkflowStaticData('node').previousWebhookId as string;
 
-					if (webhookId) {
-						// Step 1: Remove webhook assignment from domain/alias
-						const domainFilter = this.getNodeParameter('domainFilter') as string;
-						const aliasFilter = this.getNodeParameter('aliasFilter') as string;
+					if (domainId) {
+						// Restore previous webhook ID
+						if (aliasId) {
+							// Restore alias webhook
+							await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
+								webhookId: previousWebhookId || null
+							});
+						} else {
+							// Restore domain webhook
+							await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
+								webhookId: previousWebhookId || null
+							});
+						}
 
-						if (aliasFilter) {
-							const aliasId = await findAliasId.call(this, aliasFilter);
-							if (aliasId) {
-								// Remove webhook from alias (set to null/empty)
-								await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-									webhookId: null
-								});
-							}
-						} else if (domainFilter) {
-							const domainId = await findDomainId.call(this, domainFilter);
-							if (domainId) {
-								// Remove webhook from domain (set to null/empty)
-								await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-									webhookId: null
-								});
+						// Delete the webhook we created
+						if (webhookId) {
+							try {
+								await emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
+							} catch (error) {
+								// Log but don't fail if webhook deletion fails
+								console.warn('Failed to delete webhook:', error);
 							}
 						}
 
-						// Step 2: Delete the webhook itself
-						await emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
-
-						// Step 3: Clean up stored webhook ID
+						// Clean up stored configuration
+						delete this.getWorkflowStaticData('node').domainId;
+						delete this.getWorkflowStaticData('node').aliasId;
 						delete this.getWorkflowStaticData('node').webhookId;
+						delete this.getWorkflowStaticData('node').previousWebhookId;
 					}
 
 					return true;
 				} catch (error) {
 					// Don't throw error on delete failure - just log and continue
-					console.warn('Failed to clean up webhook:', error);
+					console.warn('Failed to restore previous webhook configuration:', error);
 					return true;
 				}
 			},
@@ -303,8 +283,8 @@ export class EmailConnectTrigger implements INodeType {
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const bodyData = this.getBodyData();
 		const events = this.getNodeParameter('events') as string[];
-		const domainFilter = this.getNodeParameter('domainFilter') as string;
-		const aliasFilter = this.getNodeParameter('aliasFilter') as string;
+		const domainId = this.getNodeParameter('domainId') as string;
+		const aliasId = this.getNodeParameter('aliasId') as string;
 
 		// Validate that we have the expected EmailConnect webhook data
 		if (!bodyData || typeof bodyData !== 'object') {
@@ -312,20 +292,6 @@ export class EmailConnectTrigger implements INodeType {
 		}
 
 		const emailData = bodyData as any;
-
-		// Handle webhook verification if this is a verification request
-		if (emailData.verification_token) {
-			// Store verification token for later use
-			this.getWorkflowStaticData('node').verificationToken = emailData.verification_token;
-
-			// Return success response for verification
-			return {
-				webhookResponse: {
-					status: 200,
-					body: { verified: true },
-				},
-			};
-		}
 
 		// Check if this event type should trigger the workflow
 		const eventType = emailData.status || 'email.received';
@@ -335,18 +301,15 @@ export class EmailConnectTrigger implements INodeType {
 			};
 		}
 
-		// Apply domain filter if specified
-		if (domainFilter && emailData.recipient) {
-			const recipientDomain = emailData.recipient.split('@')[1];
-			if (recipientDomain !== domainFilter) {
-				return {
-					noWebhookResponse: true,
-				};
-			}
+		// Apply domain filter - check if email is for the configured domain
+		if (domainId && emailData.domainId !== domainId) {
+			return {
+				noWebhookResponse: true,
+			};
 		}
 
-		// Apply alias filter if specified
-		if (aliasFilter && emailData.recipient !== aliasFilter) {
+		// Apply alias filter if specified - check if email is for the configured alias
+		if (aliasId && emailData.aliasId !== aliasId) {
 			return {
 				noWebhookResponse: true,
 			};
