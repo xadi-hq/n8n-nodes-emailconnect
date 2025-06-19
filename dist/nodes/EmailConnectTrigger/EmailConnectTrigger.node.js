@@ -120,22 +120,8 @@ class EmailConnectTrigger {
                     },
                     default: '',
                     required: true,
-                    description: 'The local part of the email address (before @). For example, "support" for support@yourdomain.com',
+                    description: 'The local part of the email address (before @). For example, "support" for support@yourdomain.com.',
                     placeholder: 'support',
-                },
-                {
-                    displayName: 'Destination Email',
-                    name: 'newAliasDestinationEmail',
-                    type: 'string',
-                    displayOptions: {
-                        show: {
-                            aliasMode: ['create'],
-                        },
-                    },
-                    default: '',
-                    required: true,
-                    description: 'The email address where emails to this alias should be forwarded',
-                    placeholder: 'user@anotherdomain.com',
                 },
             ],
         };
@@ -218,11 +204,10 @@ class EmailConnectTrigger {
                         }
                     }
                     else if (aliasMode === 'create') {
-                        // Create new alias first
+                        // Create new alias first (for webhook purposes, no destination email needed)
                         const localPart = this.getNodeParameter('newAliasLocalPart');
-                        const destinationEmail = this.getNodeParameter('newAliasDestinationEmail');
                         try {
-                            const aliasData = { localPart, destinationEmail };
+                            const aliasData = { localPart };
                             const createdAlias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
                             aliasId = ((_a = createdAlias.alias) === null || _a === void 0 ? void 0 : _a.id) || createdAlias.id;
                             if (!aliasId) {

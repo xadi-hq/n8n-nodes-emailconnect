@@ -161,7 +161,7 @@ describe('EmailConnect Node Validation', () => {
       const aliasMode = description.properties.find(p => p.name === 'aliasMode');
       const aliasId = description.properties.find(p => p.name === 'aliasId');
       const newAliasLocalPart = description.properties.find(p => p.name === 'newAliasLocalPart');
-      const newAliasDestinationEmail = description.properties.find(p => p.name === 'newAliasDestinationEmail');
+
 
       expect(domainId).toBeDefined();
       expect(domainId.type).toBe('options');
@@ -186,11 +186,6 @@ describe('EmailConnect Node Validation', () => {
       expect(newAliasLocalPart.type).toBe('string');
       expect(newAliasLocalPart.required).toBe(true);
       expect(newAliasLocalPart.displayOptions.show.aliasMode).toContain('create');
-
-      expect(newAliasDestinationEmail).toBeDefined();
-      expect(newAliasDestinationEmail.type).toBe('string');
-      expect(newAliasDestinationEmail.required).toBe(true);
-      expect(newAliasDestinationEmail.displayOptions.show.aliasMode).toContain('create');
     });
   });
 

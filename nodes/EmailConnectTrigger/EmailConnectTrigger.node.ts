@@ -134,20 +134,7 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'The local part of the email address (before @). For example, "support" for support@yourdomain.com.',
 				placeholder: 'support',
 			},
-			{
-				displayName: 'Destination Email',
-				name: 'newAliasDestinationEmail',
-				type: 'string',
-				displayOptions: {
-					show: {
-						aliasMode: ['create'],
-					},
-				},
-				default: '',
-				required: true,
-				description: 'The email address where emails to this alias should be forwarded',
-				placeholder: 'user@anotherdomain.com',
-			},
+
 		],
 	};
 
@@ -234,12 +221,11 @@ export class EmailConnectTrigger implements INodeType {
 						throw new NodeOperationError(this.getNode(), 'Alias ID is required when using existing alias mode');
 					}
 				} else if (aliasMode === 'create') {
-					// Create new alias first
+					// Create new alias first (for webhook purposes, no destination email needed)
 					const localPart = this.getNodeParameter('newAliasLocalPart') as string;
-					const destinationEmail = this.getNodeParameter('newAliasDestinationEmail') as string;
 
 					try {
-						const aliasData = { localPart, destinationEmail };
+						const aliasData = { localPart };
 						const createdAlias = await emailConnectApiRequest.call(this, 'POST', `/api/aliases?domainId=${domainId}`, aliasData);
 						aliasId = createdAlias.alias?.id || createdAlias.id;
 
