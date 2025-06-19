@@ -154,20 +154,43 @@ describe('EmailConnect Node Validation', () => {
       expect(eventValues).toContain('email.failed');
     });
 
-    test('should have domain and alias selection', () => {
+    test('should have domain and alias configuration', () => {
       const description = emailConnectTriggerNode.description;
 
       const domainId = description.properties.find(p => p.name === 'domainId');
+      const aliasMode = description.properties.find(p => p.name === 'aliasMode');
       const aliasId = description.properties.find(p => p.name === 'aliasId');
+      const newAliasLocalPart = description.properties.find(p => p.name === 'newAliasLocalPart');
+      const newAliasDestinationEmail = description.properties.find(p => p.name === 'newAliasDestinationEmail');
 
       expect(domainId).toBeDefined();
       expect(domainId.type).toBe('options');
       expect(domainId.required).toBe(true);
       expect(domainId.typeOptions.loadOptionsMethod).toBe('getDomains');
 
+      expect(aliasMode).toBeDefined();
+      expect(aliasMode.type).toBe('options');
+      expect(aliasMode.options).toHaveLength(3);
+      expect(aliasMode.default).toBe('existing');
+      const aliasModeValues = aliasMode.options.map(o => o.value);
+      expect(aliasModeValues).toContain('domain');
+      expect(aliasModeValues).toContain('existing');
+      expect(aliasModeValues).toContain('create');
+
       expect(aliasId).toBeDefined();
       expect(aliasId.type).toBe('options');
       expect(aliasId.typeOptions.loadOptionsMethod).toBe('getAliasesForDomain');
+      expect(aliasId.displayOptions.show.aliasMode).toContain('existing');
+
+      expect(newAliasLocalPart).toBeDefined();
+      expect(newAliasLocalPart.type).toBe('string');
+      expect(newAliasLocalPart.required).toBe(true);
+      expect(newAliasLocalPart.displayOptions.show.aliasMode).toContain('create');
+
+      expect(newAliasDestinationEmail).toBeDefined();
+      expect(newAliasDestinationEmail.type).toBe('string');
+      expect(newAliasDestinationEmail.required).toBe(true);
+      expect(newAliasDestinationEmail.displayOptions.show.aliasMode).toContain('create');
     });
   });
 
