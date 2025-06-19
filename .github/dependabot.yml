@@ -1,0 +1,72 @@
+version: 2
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "axtg"
+    assignees:
+      - "axtg"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    # Group updates for better management
+    groups:
+      n8n-dependencies:
+        patterns:
+          - "n8n*"
+        update-types:
+          - "minor"
+          - "patch"
+      typescript-ecosystem:
+        patterns:
+          - "typescript"
+          - "@types/*"
+          - "ts-*"
+        update-types:
+          - "minor"
+          - "patch"
+      testing-dependencies:
+        patterns:
+          - "jest*"
+          - "@jest/*"
+          - "eslint*"
+          - "@typescript-eslint/*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore specific packages that require manual updates
+    ignore:
+      - dependency-name: "n8n-workflow"
+        # Only update when n8n releases new versions
+        update-types: ["version-update:semver-major"]
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "axtg"
+    assignees:
+      - "axtg"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "github-actions"
+      - "automated"

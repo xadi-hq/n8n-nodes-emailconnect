@@ -1,0 +1,213 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'nodes/**/*.ts'
+      - 'credentials/**/*.ts'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  validate-docs:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check markdown links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          use-verbose-mode: 'yes'
+          config-file: '.github/markdown-link-check.json'
+
+      - name: Validate README structure
+        run: |
+          echo "📚 Validating README structure..."
+          
+          # Check for required sections
+          sections=(
+            "# n8n-nodes-emailconnect"
+            "## Installation"
+            "## Configuration"
+            "## Usage"
+            "## Nodes"
+            "## Credentials"
+            "## Development"
+            "## License"
+          )
+          
+          for section in "${sections[@]}"; do
+            if grep -q "$section" README.md; then
+              echo "✅ Found: $section"
+            else
+              echo "⚠️ Missing: $section"
+            fi
+          done
+
+      - name: Check code examples in docs
+        run: |
+          echo "🔍 Checking code examples in documentation..."
+          
+          # Extract and validate JSON examples
+          if grep -q '```json' README.md; then
+            echo "Found JSON examples, validating..."
+            # Extract JSON blocks and validate them
+            awk '/```json/,/```/' README.md | grep -v '```' | jq . > /dev/null || echo "⚠️ Invalid JSON found in README"
+          fi
+          
+          # Check for TypeScript examples
+          if grep -q '```typescript' README.md; then
+            echo "Found TypeScript examples"
+          fi
+
+  generate-api-docs:
+    name: Generate API Documentation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Generate node documentation
+        run: |
+          echo "📖 Generating node documentation..."
+          
+          # Create docs directory if it doesn't exist
+          mkdir -p docs/nodes
+          
+          # Generate documentation for each node
+          echo "# EmailConnect Nodes Documentation" > docs/nodes/README.md
+          echo "" >> docs/nodes/README.md
+          echo "This directory contains detailed documentation for each EmailConnect n8n node." >> docs/nodes/README.md
+          echo "" >> docs/nodes/README.md
+          
+          # List available nodes
+          echo "## Available Nodes" >> docs/nodes/README.md
+          echo "" >> docs/nodes/README.md
+          echo "- [EmailConnect](./EmailConnect.md) - Main EmailConnect operations node" >> docs/nodes/README.md
+          echo "- [EmailConnect Trigger](./EmailConnectTrigger.md) - EmailConnect webhook trigger node" >> docs/nodes/README.md
+
+      - name: Update changelog
+        run: |
+          echo "📝 Updating changelog..."
+          
+          # Ensure CHANGELOG.md exists
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+
+      - name: Commit documentation updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if git diff --quiet; then
+            echo "No documentation changes to commit"
+          else
+            git add docs/ CHANGELOG.md
+            git commit -m "docs: update generated documentation [skip ci]" || echo "No changes to commit"
+            git push
+          fi
+
+  check-docs-coverage:
+    name: Documentation Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check documentation coverage
+        run: |
+          echo "📊 Checking documentation coverage..."
+          
+          # Count TypeScript files
+          TS_FILES=$(find nodes credentials -name "*.ts" | wc -l)
+          
+          # Count files with JSDoc comments
+          DOCUMENTED_FILES=$(grep -l "\/\*\*" $(find nodes credentials -name "*.ts") | wc -l)
+          
+          # Calculate coverage
+          if [ "$TS_FILES" -gt 0 ]; then
+            COVERAGE=$((DOCUMENTED_FILES * 100 / TS_FILES))
+            echo "Documentation coverage: $COVERAGE% ($DOCUMENTED_FILES/$TS_FILES files)"
+            
+            if [ "$COVERAGE" -lt 80 ]; then
+              echo "⚠️ Documentation coverage is below 80%"
+              echo "Consider adding JSDoc comments to improve documentation"
+            else
+              echo "✅ Good documentation coverage!"
+            fi
+          fi
+          
+          # Check for README in each major directory
+          for dir in nodes credentials docs; do
+            if [ -d "$dir" ] && [ ! -f "$dir/README.md" ]; then
+              echo "⚠️ Missing README.md in $dir directory"
+            fi
+          done
+
+  spell-check:
+    name: Spell Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run spell check
+        uses: streetsidesoftware/cspell-action@v6
+        with:
+          files: |
+            **/*.md
+            **/*.ts
+          config: .cspell.json
+          incremental_files_only: false

@@ -1,0 +1,233 @@
+name: Code Quality & Performance
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run quality checks weekly on Saturdays at 4 AM UTC
+    - cron: '0 4 * * 6'
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint with detailed output
+        run: |
+          echo "🔍 Running ESLint analysis..."
+          npm run lint --format=json --output-file=eslint-report.json || true
+          npm run lint
+
+      - name: Run Prettier check
+        run: |
+          echo "💅 Checking code formatting..."
+          npm run format --check
+
+      - name: TypeScript strict mode check
+        run: |
+          echo "🔒 Running TypeScript in strict mode..."
+          npx tsc --noEmit --strict
+
+      - name: Check for TODO/FIXME comments
+        run: |
+          echo "📝 Checking for TODO/FIXME comments..."
+          TODO_COUNT=$(grep -r "TODO\|FIXME" --include="*.ts" --include="*.js" . | wc -l || echo "0")
+          echo "Found $TODO_COUNT TODO/FIXME comments"
+          if [ "$TODO_COUNT" -gt 10 ]; then
+            echo "⚠️ High number of TODO/FIXME comments found ($TODO_COUNT)"
+            echo "Consider addressing some of these before release"
+          fi
+
+      - name: Check bundle size
+        run: |
+          echo "📦 Analyzing bundle size..."
+          npm run build
+
+          # Check individual file sizes
+          find dist -name "*.js" -exec ls -lh {} \; | awk '{print $5 "\t" $9}'
+
+          # Calculate total size
+          TOTAL_SIZE=$(du -sh dist | cut -f1)
+          echo "Total bundle size: $TOTAL_SIZE"
+
+      - name: Upload quality reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-reports
+          path: |
+            eslint-report.json
+            coverage/
+          retention-days: 30
+
+  performance-analysis:
+    name: Performance Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Analyze build performance
+        run: |
+          echo "⚡ Analyzing build performance..."
+          time npm run build
+
+          # Check TypeScript compilation time
+          echo "🔧 TypeScript compilation performance:"
+          time npx tsc --noEmit
+
+      - name: Test execution performance
+        run: |
+          echo "🧪 Analyzing test execution performance..."
+          time npm run test
+
+      - name: Memory usage analysis
+        run: |
+          echo "🧠 Analyzing memory usage during build..."
+          /usr/bin/time -v npm run build 2>&1 | grep -E "(Maximum resident set size|User time|System time)"
+
+  documentation-quality:
+    name: Documentation Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check README quality
+        run: |
+          echo "📚 Checking README quality..."
+          
+          # Check README exists and has minimum content
+          test -f README.md || (echo "❌ README.md missing" && exit 1)
+          
+          # Check for required sections
+          grep -q "# " README.md || (echo "❌ README missing main title" && exit 1)
+          grep -q "## Installation" README.md || echo "⚠️ README missing Installation section"
+          grep -q "## Usage" README.md || echo "⚠️ README missing Usage section"
+          grep -q "## Configuration" README.md || echo "⚠️ README missing Configuration section"
+          
+          # Check README length
+          LINES=$(wc -l < README.md)
+          if [ "$LINES" -lt 50 ]; then
+            echo "⚠️ README seems short ($LINES lines). Consider adding more documentation."
+          fi
+          
+          echo "✅ README quality check completed"
+
+      - name: Check code documentation
+        run: |
+          echo "📖 Checking code documentation..."
+          
+          # Count TypeScript files with JSDoc comments
+          TS_FILES=$(find . -name "*.ts" -not -path "./node_modules/*" -not -path "./dist/*" | wc -l)
+          DOCUMENTED_FILES=$(grep -l "\/\*\*" $(find . -name "*.ts" -not -path "./node_modules/*" -not -path "./dist/*") | wc -l)
+          
+          echo "TypeScript files: $TS_FILES"
+          echo "Files with JSDoc: $DOCUMENTED_FILES"
+          
+          if [ "$TS_FILES" -gt 0 ]; then
+            COVERAGE_PERCENT=$((DOCUMENTED_FILES * 100 / TS_FILES))
+            echo "Documentation coverage: $COVERAGE_PERCENT%"
+            
+            if [ "$COVERAGE_PERCENT" -lt 50 ]; then
+              echo "⚠️ Low documentation coverage. Consider adding more JSDoc comments."
+            fi
+          fi
+
+      - name: Validate package.json
+        run: |
+          echo "📋 Validating package.json..."
+          
+          # Check required fields for n8n community nodes
+          node -e "
+            const pkg = require('./package.json');
+            const required = ['name', 'version', 'description', 'keywords', 'author', 'license', 'repository'];
+            const missing = required.filter(field => !pkg[field]);
+            
+            if (missing.length > 0) {
+              console.error('❌ Missing required fields:', missing.join(', '));
+              process.exit(1);
+            }
+            
+            if (!pkg.keywords.includes('n8n-community-node-package')) {
+              console.error('❌ Missing n8n-community-node-package keyword');
+              process.exit(1);
+            }
+            
+            console.log('✅ package.json validation passed');
+          "
+
+  changelog-check:
+    name: Changelog Quality
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changelog update
+        run: |
+          echo "📝 Checking if CHANGELOG.md was updated..."
+          
+          if git diff --name-only origin/main...HEAD | grep -q "CHANGELOG.md"; then
+            echo "✅ CHANGELOG.md was updated"
+          else
+            echo "⚠️ CHANGELOG.md was not updated"
+            echo "Consider updating CHANGELOG.md if this PR introduces user-facing changes"
+          fi
+
+      - name: Validate changelog format
+        run: |
+          echo "📋 Validating CHANGELOG.md format..."
+          
+          if [ -f CHANGELOG.md ]; then
+            # Check for proper markdown headers
+            if grep -q "^## \[" CHANGELOG.md; then
+              echo "✅ CHANGELOG.md has proper version headers"
+            else
+              echo "⚠️ CHANGELOG.md might not follow conventional format"
+            fi
+          else
+            echo "⚠️ CHANGELOG.md not found"
+          fi

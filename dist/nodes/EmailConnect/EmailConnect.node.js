@@ -15,8 +15,8 @@ class EmailConnect {
             defaults: {
                 name: 'EmailConnect',
             },
-            inputs: ["main" /* NodeConnectionType.Main */],
-            outputs: ["main" /* NodeConnectionType.Main */],
+            inputs: ['main'],
+            outputs: ['main'],
             credentials: [
                 {
                     name: 'emailConnectApi',
@@ -70,12 +70,6 @@ class EmailConnect {
                             action: 'Get a domain',
                         },
                         {
-                            name: 'Get Status',
-                            value: 'getStatus',
-                            description: 'Get domain verification status',
-                            action: 'Get domain status',
-                        },
-                        {
                             name: 'Update Configuration',
                             value: 'updateConfig',
                             description: 'Update domain configuration',
@@ -96,7 +90,7 @@ class EmailConnect {
                     displayOptions: {
                         show: {
                             resource: ['domain'],
-                            operation: ['get', 'getStatus', 'updateConfig'],
+                            operation: ['get', 'updateConfig'],
                         },
                     },
                     default: '',
@@ -356,41 +350,67 @@ class EmailConnect {
             loadOptions: {
                 async getDomains() {
                     try {
-                        const domains = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        console.log('EmailConnect getDomains response:', response);
+                        // Extract domains array from response object
+                        const domains = response === null || response === void 0 ? void 0 : response.domains;
+                        if (!Array.isArray(domains)) {
+                            console.error('EmailConnect getDomains: Expected domains array, got:', typeof domains, response);
+                            return [];
+                        }
                         return domains.map((domain) => ({
-                            name: `${domain.domain} (${domain.id})`,
+                            name: `${domain.domainName} (${domain.id})`,
                             value: domain.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getDomains error:', error);
                         return [];
                     }
                 },
                 async getAliases() {
                     try {
                         const domainId = this.getCurrentNodeParameter('domainId');
+                        console.log('EmailConnect getAliases domainId:', domainId);
                         if (!domainId) {
+                            console.log('EmailConnect getAliases: No domainId provided, returning empty array');
                             return [];
                         }
-                        const aliases = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        console.log('EmailConnect getAliases response:', response);
+                        // Extract aliases array from response object
+                        const aliases = response === null || response === void 0 ? void 0 : response.aliases;
+                        if (!Array.isArray(aliases)) {
+                            console.error('EmailConnect getAliases: Expected aliases array, got:', typeof aliases, response);
+                            return [];
+                        }
                         return aliases.map((alias) => ({
                             name: `${alias.email} (${alias.id})`,
                             value: alias.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getAliases error:', error);
                         return [];
                     }
                 },
                 async getWebhooks() {
                     try {
-                        const webhooks = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        console.log('EmailConnect getWebhooks response:', response);
+                        // Extract webhooks array from response object
+                        const webhooks = response === null || response === void 0 ? void 0 : response.webhooks;
+                        if (!Array.isArray(webhooks)) {
+                            console.error('EmailConnect getWebhooks: Expected webhooks array, got:', typeof webhooks, response);
+                            return [];
+                        }
                         return webhooks.map((webhook) => ({
                             name: `${webhook.name || webhook.url} (${webhook.id})`,
                             value: webhook.id,
                         }));
                     }
                     catch (error) {
+                        console.error('EmailConnect getWebhooks error:', error);
                         return [];
                     }
                 },
@@ -406,17 +426,13 @@ class EmailConnect {
             try {
                 if (resource === 'domain') {
                     if (operation === 'getAll') {
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-                        returnData.push(...responseData.map((item) => ({ json: item })));
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
+                        const domains = (response === null || response === void 0 ? void 0 : response.domains) || [];
+                        returnData.push(...domains.map((item) => ({ json: item })));
                     }
                     else if (operation === 'get') {
                         const domainId = this.getNodeParameter('domainId', i);
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                        returnData.push({ json: responseData });
-                    }
-                    else if (operation === 'getStatus') {
-                        const domainId = this.getNodeParameter('domainId', i);
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}/status`);
                         returnData.push({ json: responseData });
                     }
                     else if (operation === 'updateConfig') {
@@ -436,8 +452,9 @@ class EmailConnect {
                 else if (resource === 'alias') {
                     if (operation === 'getAll') {
                         const domainId = this.getNodeParameter('domainId', i);
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-                        returnData.push(...responseData.map((item) => ({ json: item })));
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                        const aliases = (response === null || response === void 0 ? void 0 : response.aliases) || [];
+                        returnData.push(...aliases.map((item) => ({ json: item })));
                     }
                     else if (operation === 'get') {
                         const aliasId = this.getNodeParameter('aliasId', i);
@@ -467,8 +484,9 @@ class EmailConnect {
                 }
                 else if (resource === 'webhook') {
                     if (operation === 'getAll') {
-                        const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
-                        returnData.push(...responseData.map((item) => ({ json: item })));
+                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
+                        const webhooks = (response === null || response === void 0 ? void 0 : response.webhooks) || [];
+                        returnData.push(...webhooks.map((item) => ({ json: item })));
                     }
                     else if (operation === 'get') {
                         const webhookId = this.getNodeParameter('webhookId', i);
