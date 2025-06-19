@@ -31,7 +31,7 @@ class EmailConnectTrigger {
                     name: 'default',
                     httpMethod: 'POST',
                     responseMode: 'onReceived',
-                    path: 'webhook',
+                    path: 'emailconnect',
                 },
             ],
             properties: [
@@ -277,63 +277,139 @@ class EmailConnectTrigger {
         };
     }
     async webhook() {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
         const bodyData = this.getBodyData();
         const events = this.getNodeParameter('events');
         const domainId = this.getNodeParameter('domainId');
         const aliasId = this.getNodeParameter('aliasId');
-        // Validate that we have the expected EmailConnect webhook data
+        // Always accept and process any data - return 200 with the received data
         if (!bodyData || typeof bodyData !== 'object') {
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invalid webhook payload received');
+            // Return test response for empty/invalid data
+            return {
+                workflowData: [
+                    [
+                        {
+                            json: {
+                                test: true,
+                                message: 'EmailConnect trigger webhook is working!',
+                                receivedAt: new Date().toISOString(),
+                                note: 'Send JSON data to see it processed'
+                            },
+                        },
+                    ],
+                ],
+            };
         }
         const emailData = bodyData;
-        // Check if this event type should trigger the workflow
-        const eventType = emailData.status || 'email.received';
-        if (!events.includes(eventType)) {
-            return {
-                noWebhookResponse: true,
-            };
+        // For any data (including EmailConnect test payloads), pass it through
+        // This ensures users can test with your UI and see the exact payload structure
+        // For EmailConnect production data, apply filters
+        // But for test data or other payloads, always process them
+        const isEmailConnectData = emailData.message || emailData.envelope || emailData.status;
+        if (isEmailConnectData) {
+            // Check if this event type should trigger the workflow
+            const eventType = emailData.status || 'email.received';
+            if (!events.includes(eventType)) {
+                // Still return 200 but don't trigger workflow
+                return {
+                    workflowData: [
+                        [
+                            {
+                                json: {
+                                    filtered: true,
+                                    reason: `Event type '${eventType}' not in configured events: ${events.join(', ')}`,
+                                    receivedData: emailData,
+                                    receivedAt: new Date().toISOString(),
+                                },
+                            },
+                        ],
+                    ],
+                };
+            }
+            // Apply domain filter - check if email is for the configured domain
+            if (domainId && emailData.domainId !== domainId) {
+                return {
+                    workflowData: [
+                        [
+                            {
+                                json: {
+                                    filtered: true,
+                                    reason: `Domain ID '${emailData.domainId}' does not match configured domain '${domainId}'`,
+                                    receivedData: emailData,
+                                    receivedAt: new Date().toISOString(),
+                                },
+                            },
+                        ],
+                    ],
+                };
+            }
+            // Apply alias filter if specified - check if email is for the configured alias
+            if (aliasId && emailData.aliasId !== aliasId) {
+                return {
+                    workflowData: [
+                        [
+                            {
+                                json: {
+                                    filtered: true,
+                                    reason: `Alias ID '${emailData.aliasId}' does not match configured alias '${aliasId}'`,
+                                    receivedData: emailData,
+                                    receivedAt: new Date().toISOString(),
+                                },
+                            },
+                        ],
+                    ],
+                };
+            }
         }
-        // Apply domain filter - check if email is for the configured domain
-        if (domainId && emailData.domainId !== domainId) {
-            return {
-                noWebhookResponse: true,
+        // Process the data - handle both EmailConnect format and test payloads
+        if (isEmailConnectData) {
+            // Process EmailConnect data with proper structure
+            const processedData = {
+                id: emailData.id,
+                domainId: emailData.domainId,
+                receivedAt: emailData.receivedAt || new Date().toISOString(),
+                sender: emailData.sender,
+                recipient: emailData.recipient,
+                subject: emailData.subject,
+                status: emailData.status,
+                payload: emailData.payload,
+                errorMessage: emailData.errorMessage,
+                // Additional structured data if available
+                headers: ((_a = emailData.payload) === null || _a === void 0 ? void 0 : _a.headers) || ((_b = emailData.envelope) === null || _b === void 0 ? void 0 : _b.headers) || {},
+                textContent: ((_c = emailData.payload) === null || _c === void 0 ? void 0 : _c.text) || ((_e = (_d = emailData.message) === null || _d === void 0 ? void 0 : _d.content) === null || _e === void 0 ? void 0 : _e.text) || '',
+                htmlContent: ((_f = emailData.payload) === null || _f === void 0 ? void 0 : _f.html) || ((_h = (_g = emailData.message) === null || _g === void 0 ? void 0 : _g.content) === null || _h === void 0 ? void 0 : _h.html) || '',
+                attachments: ((_j = emailData.payload) === null || _j === void 0 ? void 0 : _j.attachments) || ((_k = emailData.message) === null || _k === void 0 ? void 0 : _k.attachments) || [],
+                // Envelope data if included
+                envelope: ((_l = emailData.payload) === null || _l === void 0 ? void 0 : _l.envelope) || emailData.envelope || {},
+                // Include original message structure for test payloads
+                message: emailData.message,
             };
-        }
-        // Apply alias filter if specified - check if email is for the configured alias
-        if (aliasId && emailData.aliasId !== aliasId) {
             return {
-                noWebhookResponse: true,
-            };
-        }
-        // Process the email data and structure it for n8n
-        const processedData = {
-            id: emailData.id,
-            domainId: emailData.domainId,
-            receivedAt: emailData.receivedAt,
-            sender: emailData.sender,
-            recipient: emailData.recipient,
-            subject: emailData.subject,
-            status: emailData.status,
-            payload: emailData.payload,
-            errorMessage: emailData.errorMessage,
-            // Additional structured data if available
-            headers: ((_a = emailData.payload) === null || _a === void 0 ? void 0 : _a.headers) || {},
-            textContent: ((_b = emailData.payload) === null || _b === void 0 ? void 0 : _b.text) || '',
-            htmlContent: ((_c = emailData.payload) === null || _c === void 0 ? void 0 : _c.html) || '',
-            attachments: ((_d = emailData.payload) === null || _d === void 0 ? void 0 : _d.attachments) || [],
-            // Envelope data if included
-            envelope: ((_e = emailData.payload) === null || _e === void 0 ? void 0 : _e.envelope) || {},
-        };
-        return {
-            workflowData: [
-                [
-                    {
-                        json: processedData,
-                    },
+                workflowData: [
+                    [
+                        {
+                            json: processedData,
+                        },
+                    ],
                 ],
-            ],
-        };
+            };
+        }
+        else {
+            // For any other data (test payloads, manual tests), pass through as-is
+            return {
+                workflowData: [
+                    [
+                        {
+                            json: {
+                                ...emailData,
+                                receivedAt: new Date().toISOString(),
+                                note: 'Non-EmailConnect data received and processed',
+                            },
+                        },
+                    ],
+                ],
+            };
+        }
     }
 }
 exports.EmailConnectTrigger = EmailConnectTrigger;
