@@ -4,14 +4,15 @@ exports.emailConnectApiRequest = emailConnectApiRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 async function emailConnectApiRequest(method, resource, body = {}, qs = {}, uri, headers = {}) {
     const credentials = await this.getCredentials('emailConnectApi');
+    const hasBody = Object.keys(body).length > 0;
     const options = {
         method,
         headers: {
             'X-API-KEY': credentials.apiKey,
-            'Content-Type': 'application/json',
+            ...(hasBody && { 'Content-Type': 'application/json' }),
             ...headers,
         },
-        body,
+        ...(hasBody && { body }),
         qs,
         url: uri || `https://emailconnect.eu${resource}`,
         json: true,
@@ -23,13 +24,10 @@ async function emailConnectApiRequest(method, resource, body = {}, qs = {}, uri,
         hasApiKey: !!credentials.apiKey,
         apiKeyPrefix: credentials.apiKey ? `${String(credentials.apiKey).substring(0, 8)}...` : 'NONE',
         headers: { ...options.headers, 'X-API-KEY': credentials.apiKey ? '[REDACTED]' : 'NONE' },
-        body: Object.keys(body).length > 0 ? body : 'EMPTY',
+        body: hasBody ? body : 'EMPTY',
         qs: Object.keys(qs).length > 0 ? qs : 'EMPTY'
     });
     try {
-        if (Object.keys(body).length === 0) {
-            delete options.body;
-        }
         const response = await this.helpers.httpRequest(options);
         // Debug logging for response
         console.log('EmailConnect API Response:', {

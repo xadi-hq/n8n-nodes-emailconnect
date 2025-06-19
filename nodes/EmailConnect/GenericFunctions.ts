@@ -19,14 +19,16 @@ export async function emailConnectApiRequest(
 ): Promise<any> {
 	const credentials = await this.getCredentials('emailConnectApi');
 
+	const hasBody = Object.keys(body).length > 0;
+
 	const options: IHttpRequestOptions = {
 		method,
 		headers: {
 			'X-API-KEY': credentials.apiKey,
-			'Content-Type': 'application/json',
+			...(hasBody && { 'Content-Type': 'application/json' }),
 			...headers,
 		},
-		body,
+		...(hasBody && { body }),
 		qs,
 		url: uri || `https://emailconnect.eu${resource}`,
 		json: true,
@@ -39,14 +41,11 @@ export async function emailConnectApiRequest(
 		hasApiKey: !!credentials.apiKey,
 		apiKeyPrefix: credentials.apiKey ? `${String(credentials.apiKey).substring(0, 8)}...` : 'NONE',
 		headers: { ...options.headers, 'X-API-KEY': credentials.apiKey ? '[REDACTED]' : 'NONE' },
-		body: Object.keys(body).length > 0 ? body : 'EMPTY',
+		body: hasBody ? body : 'EMPTY',
 		qs: Object.keys(qs).length > 0 ? qs : 'EMPTY'
 	});
 
 	try {
-		if (Object.keys(body).length === 0) {
-			delete options.body;
-		}
 
 		const response = await this.helpers.httpRequest(options);
 
