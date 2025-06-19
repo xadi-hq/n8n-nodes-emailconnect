@@ -131,7 +131,7 @@ export class EmailConnectTrigger implements INodeType {
 				},
 				default: '',
 				required: true,
-				description: 'The local part of the email address (before @). For example, "support" for support@yourdomain.com',
+				description: 'The local part of the email address (before @). For example, "support" for support@yourdomain.com.',
 				placeholder: 'support',
 			},
 			{
