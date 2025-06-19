@@ -137,7 +137,7 @@ describe('EmailConnect Node Validation', () => {
       expect(description.webhooks).toHaveLength(1);
       expect(description.webhooks[0].name).toBe('default');
       expect(description.webhooks[0].httpMethod).toBe('POST');
-      expect(description.webhooks[0].path).toBe('webhook');
+      expect(description.webhooks[0].path).toBe('emailconnect');
     });
 
     test('should have event filtering options', () => {
