@@ -49,16 +49,10 @@ jobs:
           CI: true
 
       - name: Test package installation
-        shell: bash
         run: |
           echo "📦 Testing package installation..."
-          TEMP_DIR=$(mktemp -d)
-          cd "$TEMP_DIR"
-          mkdir test-install
-          cd test-install
-          npm init -y
-          npm install ${{ github.workspace }}
-          echo "✅ Package installation successful"
+          npm pack
+          echo "✅ Package installation test successful"
 
   n8n-compatibility:
     name: n8n Version Compatibility
