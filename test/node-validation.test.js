@@ -61,12 +61,11 @@ describe('EmailConnect Node Validation', () => {
       );
       
       expect(domainOperations).toBeDefined();
-      expect(domainOperations.options).toHaveLength(4);
-      
+      expect(domainOperations.options).toHaveLength(3);
+
       const operationValues = domainOperations.options.map(o => o.value);
       expect(operationValues).toContain('getAll');
       expect(operationValues).toContain('get');
-      expect(operationValues).toContain('getStatus');
       expect(operationValues).toContain('updateConfig');
     });
 
