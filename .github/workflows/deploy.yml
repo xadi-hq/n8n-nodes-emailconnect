@@ -38,7 +38,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Security audit
-        run: pnpm audit --audit-level moderate
+        run: npm audit --audit-level moderate
 
       - name: Check for vulnerabilities
         uses: actions/setup-node@v4

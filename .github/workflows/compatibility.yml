@@ -10,7 +10,7 @@ on:
     - cron: '0 3 * * 0'
 
 env:
-  PNPM_VERSION: '9.1.0'
+  NODE_VERSION: '18'
 
 jobs:
   node-compatibility:
@@ -35,27 +35,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Run linting
-        run: pnpm run lint
+        run: npm run lint
 
       - name: Run type checking
         run: npx tsc --noEmit
 
       - name: Build package
-        run: pnpm run build
+        run: npm run build
 
       - name: Run tests
-        run: pnpm run test
+        run: npm run test
         env:
           CI: true
 
@@ -84,28 +79,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Install n8n ${{ matrix.n8n-version }}
         run: |
           echo "🔧 Installing n8n ${{ matrix.n8n-version }}..."
-          pnpm add -D n8n@${{ matrix.n8n-version }}
+          npm install --save-dev n8n@${{ matrix.n8n-version }}
 
       - name: Build package
-        run: pnpm run build
+        run: npm run build
 
       - name: Test with n8n ${{ matrix.n8n-version }}
         run: |
           echo "🧪 Testing compatibility with n8n ${{ matrix.n8n-version }}..."
-          pnpm run test
+          npm run test
           echo "✅ Compatibility test passed"
 
   package-validation:
@@ -119,18 +109,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
+          cache: 'npm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Build package
-        run: pnpm run build
+        run: npm run build
 
       - name: Validate package structure
         run: |
@@ -175,5 +160,5 @@ jobs:
       - name: Dry run publish
         run: |
           echo "🧪 Testing npm publish (dry run)..."
-          pnpm publish --dry-run
+          npm publish --dry-run
           echo "✅ Publish dry run successful"

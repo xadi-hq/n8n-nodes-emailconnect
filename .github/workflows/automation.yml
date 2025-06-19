@@ -16,7 +16,7 @@ jobs:
     if: github.event_name == 'issues' && github.event.action == 'opened'
     steps:
       - name: Label bug reports
-        if: "contains(github.event.issue.title, 'bug') || contains(github.event.issue.body, 'bug')"
+        if: contains(github.event.issue.title, 'bug') || contains(github.event.issue.body, 'bug')
         uses: actions/github-script@v7
         with:
           script: |
@@ -28,7 +28,7 @@ jobs:
             });
 
       - name: Label feature requests
-        if: "contains(github.event.issue.title, 'feature') || contains(github.event.issue.body, 'feature request')"
+        if: contains(github.event.issue.title, 'feature') || contains(github.event.issue.body, 'feature request')
         uses: actions/github-script@v7
         with:
           script: |
@@ -40,7 +40,7 @@ jobs:
             });
 
       - name: Label documentation issues
-        if: "contains(github.event.issue.title, 'documentation') || contains(github.event.issue.title, 'docs')"
+        if: contains(github.event.issue.title, 'documentation') || contains(github.event.issue.title, 'docs')
         uses: actions/github-script@v7
         with:
           script: |
