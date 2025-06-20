@@ -212,12 +212,53 @@ export class EmailConnectTrigger implements INodeType {
 		default: {
 			async checkExists(this: IHookFunctions): Promise<boolean> {
 				const webhookUrl = this.getNodeWebhookUrl('default');
+				const storedWebhookId = this.getWorkflowStaticData('node').webhookId as string;
+
 				try {
-					// Check if a webhook with this URL already exists
+					// If we have a stored webhook ID, check if it needs URL update
+					if (storedWebhookId) {
+						try {
+							const webhook = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${storedWebhookId}`);
+
+							// If the stored webhook exists but has a different URL, update it
+							if (webhook && webhook.url !== webhookUrl) {
+								console.log('EmailConnect: Webhook URL changed, updating:', {
+									webhookId: storedWebhookId,
+									oldUrl: webhook.url,
+									newUrl: webhookUrl
+								});
+
+								// Determine if this is switching to test or production
+								const isTestUrl = webhookUrl?.includes('/webhook-test/') || false;
+								const description = `Auto-created webhook for n8n trigger node: ${this.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
+
+								// Update the webhook URL and description
+								await emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${storedWebhookId}`, {
+									url: webhookUrl,
+									description: description
+								});
+
+								console.log('EmailConnect: Successfully updated webhook URL');
+								return true; // Webhook exists and has been updated
+							}
+
+							// If URL matches, webhook exists and is current
+							if (webhook && webhook.url === webhookUrl) {
+								return true;
+							}
+						} catch (webhookError) {
+							// If the stored webhook doesn't exist anymore, fall through to create new one
+							console.log('EmailConnect: Stored webhook not found, will create new one:', storedWebhookId);
+							return false;
+						}
+					}
+
+					// Check if a webhook with this URL already exists (original logic for new webhooks)
 					const response = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
 					const webhooks = response?.webhooks || [];
 					return webhooks.some((webhook: any) => webhook.url === webhookUrl);
 				} catch (error) {
+					console.error('EmailConnect: Error in checkExists:', error);
 					return false;
 				}
 			},
