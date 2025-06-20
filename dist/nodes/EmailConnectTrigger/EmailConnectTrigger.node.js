@@ -14,7 +14,7 @@ class EmailConnectTrigger {
             icon: 'file:emailconnect.svg',
             group: ['trigger'],
             version: 1,
-            description: 'Starts the workflow when EmailConnect receives an email',
+            description: 'Trigger workflows when emails are received via EmailConnect - 100% EU-operated email service with multi-alias support',
             defaults: {
                 name: 'EmailConnect Trigger',
             },
@@ -35,6 +35,26 @@ class EmailConnectTrigger {
                 },
             ],
             properties: [
+                {
+                    displayName: '🇪🇺 Welcome to EmailConnect',
+                    name: 'gettingStarted',
+                    type: 'notice',
+                    default: '',
+                    typeOptions: {
+                        theme: 'info'
+                    },
+                    description: `
+					<strong>🇪🇺 100% EU-operated email service</strong><br/>
+					• Multi-alias support for organized email routing<br/>
+					• Free to start: 50 emails per month<br/>
+					• Enterprise-grade security and compliance<br/>
+					<br/>
+					<strong>Quick Setup:</strong><br/>
+					1. <a href="https://emailconnect.eu/register" target="_blank">Register your account →</a><br/>
+					2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key →</a><br/>
+					3. Configure your domain and aliases below
+				`,
+                },
                 {
                     displayName: 'Events',
                     name: 'events',
@@ -68,7 +88,8 @@ class EmailConnectTrigger {
                     },
                     required: true,
                     default: '',
-                    description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                    hint: 'Domain must be verified in EmailConnect before use',
+                    description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. <strong>Note:</strong> Domain must be verified in your EmailConnect account first. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
                 {
                     displayName: 'Alias Configuration',
@@ -78,21 +99,21 @@ class EmailConnectTrigger {
                         {
                             name: 'Use Domain Catch-All',
                             value: 'domain',
-                            description: 'Use the domain\'s catch-all webhook',
+                            description: 'Route ALL emails to this domain through this workflow (*@yourdomain.com)',
                         },
                         {
                             name: 'Select Existing Alias',
                             value: 'existing',
-                            description: 'Select an existing alias for this domain',
+                            description: 'Use an existing email alias (e.g., support@yourdomain.com)',
                         },
                         {
                             name: 'Create New Alias',
                             value: 'create',
-                            description: 'Create a new alias for this domain',
+                            description: 'Create a new email alias for this workflow',
                         },
                     ],
                     default: 'existing',
-                    description: 'Choose how to configure the alias for this trigger',
+                    description: 'Choose how to configure email routing for this trigger. Each option determines which emails will activate this workflow.',
                 },
                 {
                     displayName: 'Alias Name or ID',
@@ -107,7 +128,8 @@ class EmailConnectTrigger {
                         },
                     },
                     default: '',
-                    description: 'Select a specific alias to configure. Only emails to this alias will trigger the workflow. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                    hint: 'Only emails sent to this specific alias will trigger the workflow',
+                    description: 'Select a specific alias to configure. Only emails to this alias will trigger the workflow. If no aliases appear, create one in your EmailConnect dashboard first. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
                 {
                     displayName: 'Local Part',
@@ -120,8 +142,9 @@ class EmailConnectTrigger {
                     },
                     default: '',
                     required: true,
-                    description: 'The local part of the email address (before @). For example, "support" for support@yourdomain.com.',
-                    placeholder: 'support',
+                    hint: 'This will create a new email alias automatically',
+                    description: 'The local part of the email address (before @). For example, "support" creates support@yourdomain.com. The alias will be created automatically and linked to this workflow.',
+                    placeholder: 'e.g. support',
                 },
             ],
         };
