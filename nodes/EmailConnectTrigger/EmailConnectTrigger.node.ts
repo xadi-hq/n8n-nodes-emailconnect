@@ -54,17 +54,7 @@ export class EmailConnectTrigger implements INodeType {
 				typeOptions: {
 					theme: 'info'
 				},
-				description: `
-					<strong>🇪🇺 100% EU-operated email service</strong><br/>
-					• Multi-alias support for organized email routing<br/>
-					• Free to start: 50 emails per month<br/>
-					• Enterprise-grade security and compliance<br/>
-					<br/>
-					<strong>Quick Setup:</strong><br/>
-					1. <a href="https://emailconnect.eu/register" target="_blank">Register your account →</a><br/>
-					2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key →</a><br/>
-					3. Configure your domain and aliases below
-				`,
+				description: '<strong>🇪🇺 100% EU-operated email service</strong>• Multi-alias support for organized email routing• Free to start: 50 emails per month• Enterprise-grade security and compliance<strong>Quick Setup:</strong>1. <a href="https://emailconnect.eu/register" target="_blank">Register your account →</a>2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key →</a>3. Configure your domain and aliases below',
 			},
 			{
 				displayName: 'Events',
