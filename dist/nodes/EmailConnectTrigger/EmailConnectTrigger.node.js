@@ -194,6 +194,11 @@ class EmailConnectTrigger {
                 async checkExists() {
                     const webhookUrl = this.getNodeWebhookUrl('default');
                     const storedWebhookId = this.getWorkflowStaticData('node').webhookId;
+                    console.log('EmailConnect: checkExists called with:', {
+                        webhookUrl,
+                        storedWebhookId: storedWebhookId ? `${storedWebhookId.substring(0, 8)}...` : 'none',
+                        hasStoredId: !!storedWebhookId
+                    });
                     try {
                         // If we have a stored webhook ID, check if it needs URL update
                         if (storedWebhookId) {
@@ -214,7 +219,20 @@ class EmailConnectTrigger {
                                         url: webhookUrl,
                                         description: description
                                     });
-                                    console.log('EmailConnect: Successfully updated webhook URL');
+                                    console.log('EmailConnect: Successfully updated webhook URL, now verifying...');
+                                    // Verify the updated webhook
+                                    const verificationToken = storedWebhookId.slice(-5);
+                                    try {
+                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify`);
+                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify/complete`, {
+                                            verificationToken: verificationToken
+                                        });
+                                        console.log('EmailConnect: Successfully verified updated webhook');
+                                    }
+                                    catch (verificationError) {
+                                        console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
+                                        // Don't fail the entire operation if verification fails
+                                    }
                                     return true; // Webhook exists and has been updated
                                 }
                                 // If URL matches, webhook exists and is current
@@ -231,7 +249,65 @@ class EmailConnectTrigger {
                         // Check if a webhook with this URL already exists (original logic for new webhooks)
                         const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
                         const webhooks = (response === null || response === void 0 ? void 0 : response.webhooks) || [];
-                        return webhooks.some((webhook) => webhook.url === webhookUrl);
+                        // First check for exact URL match
+                        const exactMatch = webhooks.find((webhook) => webhook.url === webhookUrl);
+                        if (exactMatch) {
+                            console.log('EmailConnect: Found exact URL match, storing webhook ID:', exactMatch.id);
+                            // Store the webhook ID for future use
+                            this.getWorkflowStaticData('node').webhookId = exactMatch.id;
+                            return true;
+                        }
+                        // Extract UUID from current webhook URL to find matching webhooks
+                        // URL format: https://domain/webhook[-test]/UUID/emailconnect
+                        const uuidMatch = webhookUrl === null || webhookUrl === void 0 ? void 0 : webhookUrl.match(/\/webhook(?:-test)?\/([a-f0-9-]{36})\//);
+                        if (uuidMatch) {
+                            const currentUuid = uuidMatch[1];
+                            console.log('EmailConnect: Extracted UUID from webhook URL:', currentUuid);
+                            // Find webhooks that contain the same UUID (test/production variants)
+                            const uuidMatches = webhooks.filter((webhook) => {
+                                return webhook.url && webhook.url.includes(currentUuid);
+                            });
+                            if (uuidMatches.length > 0) {
+                                const matchingWebhook = uuidMatches[0];
+                                console.log('EmailConnect: Found webhook with same UUID but different URL, updating:', {
+                                    webhookId: matchingWebhook.id,
+                                    oldUrl: matchingWebhook.url,
+                                    newUrl: webhookUrl,
+                                    uuid: currentUuid
+                                });
+                                // Store the webhook ID and update its URL
+                                this.getWorkflowStaticData('node').webhookId = matchingWebhook.id;
+                                // Update the webhook URL
+                                const isTestUrl = (webhookUrl === null || webhookUrl === void 0 ? void 0 : webhookUrl.includes('/webhook-test/')) || false;
+                                const description = `Auto-created webhook for n8n trigger node: ${this.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
+                                try {
+                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${matchingWebhook.id}`, {
+                                        url: webhookUrl,
+                                        description: description
+                                    });
+                                    console.log('EmailConnect: Successfully updated webhook URL, now verifying...');
+                                    // Verify the updated webhook
+                                    const verificationToken = matchingWebhook.id.slice(-5);
+                                    try {
+                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify`);
+                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify/complete`, {
+                                            verificationToken: verificationToken
+                                        });
+                                        console.log('EmailConnect: Successfully verified updated webhook');
+                                    }
+                                    catch (verificationError) {
+                                        console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
+                                    }
+                                    return true;
+                                }
+                                catch (updateError) {
+                                    console.error('EmailConnect: Failed to update webhook URL:', updateError);
+                                    // Fall through to create new webhook
+                                }
+                            }
+                        }
+                        console.log('EmailConnect: No matching webhooks found, will create new one');
+                        return false;
                     }
                     catch (error) {
                         console.error('EmailConnect: Error in checkExists:', error);
