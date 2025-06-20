@@ -359,7 +359,7 @@ class EmailConnect {
                             return [];
                         }
                         return domains.map((domain) => ({
-                            name: `${domain.domainName} (${domain.id})`,
+                            name: `${domain.domain} (${domain.id})`,
                             value: domain.id,
                         }));
                     }

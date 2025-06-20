@@ -380,7 +380,7 @@ export class EmailConnect implements INodeType {
 					}
 
 					return domains.map((domain: any) => ({
-						name: `${domain.domainName} (${domain.id})`,
+						name: `${domain.domain} (${domain.id})`,
 						value: domain.id,
 					}));
 				} catch (error) {
