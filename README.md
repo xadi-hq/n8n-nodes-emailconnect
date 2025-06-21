@@ -311,7 +311,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Changelog
 
-### v0.2.3 (2025-06-21)
+### v0.2.4 (2025-06-21)
 - **Fixed**: Catch-all alias creation conflicts - existing catch-all aliases are now updated instead of failing with 409 errors
 - **Fixed**: Webhook-alias unlinking during test/production URL switching - webhooks now maintain proper linkage
 - **Enhanced**: Domain-catchall synchronization - webhooks stay synchronized between domain and catch-all aliases
