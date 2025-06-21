@@ -6,6 +6,73 @@ const GenericFunctions_1 = require("../EmailConnect/GenericFunctions");
 // Helper functions for webhook management
 // Note: Verification is now handled automatically during webhook creation
 // using the webhook ID's last 5 characters as the verification token
+/**
+ * Helper function to ensure webhook-alias linkage is maintained
+ * This is called after webhook URL updates to prevent orphaned webhooks
+ */
+async function ensureWebhookAliasLinkage(context, webhookId) {
+    try {
+        const domainId = context.getNodeParameter('domainId');
+        const aliasMode = context.getNodeParameter('aliasMode');
+        let aliasId = '';
+        // Get aliasId based on mode
+        if (aliasMode === 'existing') {
+            aliasId = context.getNodeParameter('aliasId');
+        }
+        else {
+            // For 'create' and 'domain' modes, get aliasId from stored data
+            aliasId = context.getWorkflowStaticData('node').aliasId;
+        }
+        console.log('EmailConnect: Ensuring webhook-alias linkage:', {
+            webhookId,
+            aliasId,
+            aliasMode,
+            domainId
+        });
+        if (aliasId) {
+            // Verify the alias is still linked to our webhook
+            const alias = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
+            if (alias.webhookId !== webhookId) {
+                console.log('EmailConnect: Alias webhook linkage broken, restoring:', {
+                    aliasId,
+                    currentWebhookId: alias.webhookId,
+                    expectedWebhookId: webhookId
+                });
+                // Restore the linkage
+                await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}/webhook`, {
+                    webhookId: webhookId
+                });
+                console.log('EmailConnect: Successfully restored alias-webhook linkage');
+            }
+            else {
+                console.log('EmailConnect: Alias-webhook linkage is correct');
+            }
+        }
+        else if (aliasMode === 'domain') {
+            // For domain mode, ensure domain webhook is linked
+            const domain = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/domains/${domainId}`);
+            if (domain.webhookId !== webhookId) {
+                console.log('EmailConnect: Domain webhook linkage broken, restoring:', {
+                    domainId,
+                    currentWebhookId: domain.webhookId,
+                    expectedWebhookId: webhookId
+                });
+                // Restore the domain linkage
+                await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/domains/${domainId}/webhook`, {
+                    webhookId: webhookId
+                });
+                console.log('EmailConnect: Successfully restored domain-webhook linkage');
+            }
+            else {
+                console.log('EmailConnect: Domain-webhook linkage is correct');
+            }
+        }
+    }
+    catch (error) {
+        console.warn('EmailConnect: Failed to ensure webhook-alias linkage:', error);
+        // Don't throw - this is a recovery operation
+    }
+}
 class EmailConnectTrigger {
     constructor() {
         this.description = {
@@ -233,6 +300,8 @@ class EmailConnectTrigger {
                                         console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
                                         // Don't fail the entire operation if verification fails
                                     }
+                                    // Ensure webhook-alias linkage is maintained after URL update
+                                    await ensureWebhookAliasLinkage(this, storedWebhookId);
                                     return true; // Webhook exists and has been updated
                                 }
                                 // If URL matches, webhook exists and is current
@@ -298,6 +367,8 @@ class EmailConnectTrigger {
                                     catch (verificationError) {
                                         console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
                                     }
+                                    // Ensure webhook-alias linkage is maintained after URL update
+                                    await ensureWebhookAliasLinkage(this, matchingWebhook.id);
                                     return true;
                                 }
                                 catch (updateError) {

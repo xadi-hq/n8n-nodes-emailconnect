@@ -71,10 +71,14 @@ The main node for interacting with EmailConnect API operations.
 A trigger node that starts workflows when EmailConnect processes emails.
 
 **Features:**
-- Real-time email processing notifications
-- Event filtering (received, processed, failed)
-- Domain and alias filtering
-- Webhook-based triggering
+- Real-time email processing notifications via webhooks
+- Multiple alias configuration modes:
+  - Create new aliases with webhooks
+  - Use existing aliases
+  - Use domain catch-all functionality
+- Automatic webhook URL management (test/production switching)
+- Domain and catch-all webhook synchronization
+- Robust webhook lifecycle management
 
 ## Usage Examples
 
@@ -124,9 +128,11 @@ A trigger node that starts workflows when EmailConnect processes emails.
       "name": "Email Received",
       "type": "n8n-nodes-emailconnect.emailConnectTrigger",
       "parameters": {
-        "events": ["email.received"],
-        "domainFilter": "example.com",
-        "aliasFilter": "support@example.com"
+        "domainId": "your-domain-id",
+        "aliasMode": "create",
+        "aliasEmail": "support@example.com",
+        "webhookName": "Support Email Webhook",
+        "webhookDescription": "Webhook for support email processing"
       }
     }
   ]
@@ -226,6 +232,18 @@ This n8n node requires an EmailConnect API key with **"API User"** scope, which 
 }
 ```
 
+## Known Limitations
+
+### Webhook Cleanup on Node Deletion
+
+⚠️ **Important**: Due to changes in n8n 1.15.0+, webhooks are **not automatically deleted** when EmailConnect trigger nodes are removed from workflows. This is a limitation of the n8n framework, not a bug in this node.
+
+**Impact**: Deleted trigger nodes may leave "orphaned" webhooks in your EmailConnect account.
+
+**Solution**: Manually clean up unused webhooks via the [EmailConnect Webhooks Dashboard](https://emailconnect.eu/webhooks).
+
+**Why this happens**: n8n no longer calls webhook deregistration methods to improve performance, assuming third-party services will handle webhook retries gracefully.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -249,11 +267,18 @@ This n8n node requires an EmailConnect API key with **"API User"** scope, which 
 - Your API key may not have the required scope
 - Contact EmailConnect support to upgrade your API key permissions
 
+**Catch-all Alias Issues**
+- Catch-all aliases (`*@domain.com`) are automatically updated when recreated
+- Domain and catch-all webhooks are synchronized automatically
+- Use the "Use Domain Catch-All" option in trigger nodes for catch-all functionality
+
 ### Getting Help
 
 - **EmailConnect Documentation**: [https://emailconnect.eu/docs](https://emailconnect.eu/docs)
+- **EmailConnect Dashboard**: [https://emailconnect.eu](https://emailconnect.eu) (for webhook management)
 - **EmailConnect Support**: [support@emailconnect.eu](mailto:support@emailconnect.eu)
 - **n8n Community**: [https://community.n8n.io](https://community.n8n.io)
+- **GitHub Issues**: [https://github.com/xadi-hq/n8n-nodes-emailconnect/issues](https://github.com/xadi-hq/n8n-nodes-emailconnect/issues)
 
 ## Development
 
@@ -285,6 +310,20 @@ npm test
 MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### v0.2.3 (2025-06-21)
+- **Fixed**: Catch-all alias creation conflicts - existing catch-all aliases are now updated instead of failing with 409 errors
+- **Fixed**: Webhook-alias unlinking during test/production URL switching - webhooks now maintain proper linkage
+- **Enhanced**: Domain-catchall synchronization - webhooks stay synchronized between domain and catch-all aliases
+- **Improved**: Error handling and logging for webhook lifecycle operations
+- **Added**: Comprehensive documentation for webhook lifecycle management
+- **Note**: Webhook cleanup on node deletion is limited by n8n framework changes (see Known Limitations)
+
+### v0.2.0
+- Enhanced trigger node functionality
+- Improved webhook management
+- Better error handling and validation
+- Updated API integration
 
 ### v0.1.0
 - Initial release
@@ -402,14 +441,16 @@ The trigger node receives webhook data from EmailConnect when emails are process
 
 #### Configuration Options
 
-**Events**
-- `email.received`: Triggered when an email is received
-- `email.processed`: Triggered when an email is successfully processed
-- `email.failed`: Triggered when email processing fails
+**Alias Modes**
+- **Create New Alias**: Creates a new email alias with an associated webhook
+- **Use Existing Alias**: Links to an existing alias and updates its webhook
+- **Use Domain Catch-All**: Uses or creates a catch-all alias (`*@domain.com`) for the domain
 
-**Filters**
-- **Domain Filter**: Only trigger for emails from specific domain
-- **Alias Filter**: Only trigger for emails to specific alias
+**Webhook Management**
+- Automatic webhook URL switching between test and production modes
+- Webhook verification and activation
+- Domain and catch-all webhook synchronization
+- Comprehensive cleanup logic (limited by n8n framework)
 
 #### Webhook Data Structure
 
@@ -419,7 +460,7 @@ The trigger node outputs the following data structure:
 {
   "id": "email-processing-id",
   "domainId": "domain-id",
-  "receivedAt": "2024-01-15T10:30:00Z",
+  "receivedAt": "2025-06-21T10:30:00Z",
   "sender": "user@example.com",
   "recipient": "support@yourdomain.com",
   "subject": "Email subject",
