@@ -286,19 +286,46 @@ class EmailConnectTrigger {
                                         url: webhookUrl,
                                         description: description
                                     });
-                                    console.log('EmailConnect: Successfully updated webhook URL, now verifying...');
-                                    // Verify the updated webhook
-                                    const verificationToken = storedWebhookId.slice(-5);
+                                    console.log('EmailConnect: Successfully updated webhook URL');
+                                    // Check if webhook is already verified (n8n webhooks are auto-verified)
                                     try {
-                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify`);
-                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify/complete`, {
-                                            verificationToken: verificationToken
+                                        const webhookInfo = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${storedWebhookId}`);
+                                        console.log('EmailConnect: Webhook info after update:', {
+                                            id: webhookInfo.id,
+                                            verified: webhookInfo.verified,
+                                            active: webhookInfo.active
                                         });
-                                        console.log('EmailConnect: Successfully verified updated webhook');
+                                        if (webhookInfo.verified) {
+                                            console.log('EmailConnect: Webhook is already verified (auto-verified), skipping manual verification');
+                                        }
+                                        else {
+                                            console.log('EmailConnect: Webhook not verified, starting manual verification...');
+                                            // Add a small delay to ensure webhook URL update is processed
+                                            await new Promise(resolve => setTimeout(resolve, 1000));
+                                            // Verify the updated webhook
+                                            const verificationToken = storedWebhookId.slice(-5);
+                                            try {
+                                                console.log('EmailConnect: Starting webhook verification for webhook:', storedWebhookId);
+                                                const verifyResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify`);
+                                                console.log('EmailConnect: Verification request sent, response:', verifyResponse);
+                                                const completeResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify/complete`, {
+                                                    verificationToken: verificationToken
+                                                });
+                                                console.log('EmailConnect: Verification completed, response:', completeResponse);
+                                                console.log('EmailConnect: Successfully verified updated webhook');
+                                            }
+                                            catch (verificationError) {
+                                                console.error('EmailConnect: Failed to verify updated webhook:', {
+                                                    error: verificationError,
+                                                    webhookId: storedWebhookId,
+                                                    verificationToken: verificationToken
+                                                });
+                                                // Don't fail the entire operation if verification fails
+                                            }
+                                        }
                                     }
-                                    catch (verificationError) {
-                                        console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
-                                        // Don't fail the entire operation if verification fails
+                                    catch (infoError) {
+                                        console.error('EmailConnect: Failed to get webhook info, skipping verification check:', infoError);
                                     }
                                     // Ensure webhook-alias linkage is maintained after URL update
                                     await ensureWebhookAliasLinkage(this, storedWebhookId);
@@ -354,18 +381,45 @@ class EmailConnectTrigger {
                                         url: webhookUrl,
                                         description: description
                                     });
-                                    console.log('EmailConnect: Successfully updated webhook URL, now verifying...');
-                                    // Verify the updated webhook
-                                    const verificationToken = matchingWebhook.id.slice(-5);
+                                    console.log('EmailConnect: Successfully updated webhook URL');
+                                    // Check if webhook is already verified (n8n webhooks are auto-verified)
                                     try {
-                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify`);
-                                        await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify/complete`, {
-                                            verificationToken: verificationToken
+                                        const webhookInfo = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${matchingWebhook.id}`);
+                                        console.log('EmailConnect: Webhook info after update:', {
+                                            id: webhookInfo.id,
+                                            verified: webhookInfo.verified,
+                                            active: webhookInfo.active
                                         });
-                                        console.log('EmailConnect: Successfully verified updated webhook');
+                                        if (webhookInfo.verified) {
+                                            console.log('EmailConnect: Webhook is already verified (auto-verified), skipping manual verification');
+                                        }
+                                        else {
+                                            console.log('EmailConnect: Webhook not verified, starting manual verification...');
+                                            // Add a small delay to ensure webhook URL update is processed
+                                            await new Promise(resolve => setTimeout(resolve, 1000));
+                                            // Verify the updated webhook
+                                            const verificationToken = matchingWebhook.id.slice(-5);
+                                            try {
+                                                console.log('EmailConnect: Starting webhook verification for existing webhook:', matchingWebhook.id);
+                                                const verifyResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify`);
+                                                console.log('EmailConnect: Verification request sent, response:', verifyResponse);
+                                                const completeResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify/complete`, {
+                                                    verificationToken: verificationToken
+                                                });
+                                                console.log('EmailConnect: Verification completed, response:', completeResponse);
+                                                console.log('EmailConnect: Successfully verified updated webhook');
+                                            }
+                                            catch (verificationError) {
+                                                console.error('EmailConnect: Failed to verify updated webhook:', {
+                                                    error: verificationError,
+                                                    webhookId: matchingWebhook.id,
+                                                    verificationToken: verificationToken
+                                                });
+                                            }
+                                        }
                                     }
-                                    catch (verificationError) {
-                                        console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
+                                    catch (infoError) {
+                                        console.error('EmailConnect: Failed to get webhook info, skipping verification check:', infoError);
                                     }
                                     // Ensure webhook-alias linkage is maintained after URL update
                                     await ensureWebhookAliasLinkage(this, matchingWebhook.id);
@@ -689,7 +743,7 @@ class EmailConnectTrigger {
         };
     }
     async webhook() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
         const bodyData = this.getBodyData();
         const events = this.getNodeParameter('events');
         const domainId = this.getNodeParameter('domainId');
@@ -719,6 +773,35 @@ class EmailConnectTrigger {
             };
         }
         const emailData = bodyData;
+        // Check if this is a webhook verification payload
+        if (emailData.type === 'webhook_verification') {
+            console.log('EmailConnect: Received webhook verification payload:', {
+                type: emailData.type,
+                verification_token: emailData.verification_token,
+                webhook_id: (_a = emailData.webhook) === null || _a === void 0 ? void 0 : _a.id,
+                timestamp: emailData.timestamp,
+                currentTime: new Date().toISOString()
+            });
+            // For verification payloads, return a minimal response that doesn't trigger workflow execution
+            // This prevents verification payloads from cluttering your workflow runs
+            return {
+                workflowData: [
+                    [
+                        {
+                            json: {
+                                __emailconnect_internal: true,
+                                type: 'webhook_verification',
+                                message: 'Webhook verification received - this should not trigger workflow logic',
+                                verification_token: emailData.verification_token,
+                                webhook_id: (_b = emailData.webhook) === null || _b === void 0 ? void 0 : _b.id,
+                                receivedAt: new Date().toISOString(),
+                                note: 'This is an internal verification payload and should be ignored by your workflow'
+                            },
+                        },
+                    ],
+                ],
+            };
+        }
         // For any data (including EmailConnect test payloads), pass it through
         // This ensures users can test with your UI and see the exact payload structure
         // For EmailConnect production data, apply filters
@@ -793,12 +876,12 @@ class EmailConnectTrigger {
                 payload: emailData.payload,
                 errorMessage: emailData.errorMessage,
                 // Additional structured data if available
-                headers: ((_a = emailData.payload) === null || _a === void 0 ? void 0 : _a.headers) || ((_b = emailData.envelope) === null || _b === void 0 ? void 0 : _b.headers) || {},
-                textContent: ((_c = emailData.payload) === null || _c === void 0 ? void 0 : _c.text) || ((_e = (_d = emailData.message) === null || _d === void 0 ? void 0 : _d.content) === null || _e === void 0 ? void 0 : _e.text) || '',
-                htmlContent: ((_f = emailData.payload) === null || _f === void 0 ? void 0 : _f.html) || ((_h = (_g = emailData.message) === null || _g === void 0 ? void 0 : _g.content) === null || _h === void 0 ? void 0 : _h.html) || '',
-                attachments: ((_j = emailData.payload) === null || _j === void 0 ? void 0 : _j.attachments) || ((_k = emailData.message) === null || _k === void 0 ? void 0 : _k.attachments) || [],
+                headers: ((_c = emailData.payload) === null || _c === void 0 ? void 0 : _c.headers) || ((_d = emailData.envelope) === null || _d === void 0 ? void 0 : _d.headers) || {},
+                textContent: ((_e = emailData.payload) === null || _e === void 0 ? void 0 : _e.text) || ((_g = (_f = emailData.message) === null || _f === void 0 ? void 0 : _f.content) === null || _g === void 0 ? void 0 : _g.text) || '',
+                htmlContent: ((_h = emailData.payload) === null || _h === void 0 ? void 0 : _h.html) || ((_k = (_j = emailData.message) === null || _j === void 0 ? void 0 : _j.content) === null || _k === void 0 ? void 0 : _k.html) || '',
+                attachments: ((_l = emailData.payload) === null || _l === void 0 ? void 0 : _l.attachments) || ((_m = emailData.message) === null || _m === void 0 ? void 0 : _m.attachments) || [],
                 // Envelope data if included
-                envelope: ((_l = emailData.payload) === null || _l === void 0 ? void 0 : _l.envelope) || emailData.envelope || {},
+                envelope: ((_o = emailData.payload) === null || _o === void 0 ? void 0 : _o.envelope) || emailData.envelope || {},
                 // Include original message structure for test payloads
                 message: emailData.message,
             };

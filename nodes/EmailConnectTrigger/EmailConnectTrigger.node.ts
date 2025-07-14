@@ -318,19 +318,48 @@ export class EmailConnectTrigger implements INodeType {
 									description: description
 								});
 
-								console.log('EmailConnect: Successfully updated webhook URL, now verifying...');
+								console.log('EmailConnect: Successfully updated webhook URL');
 
-								// Verify the updated webhook
-								const verificationToken = storedWebhookId.slice(-5);
+								// Check if webhook is already verified (n8n webhooks are auto-verified)
 								try {
-									await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify`);
-									await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify/complete`, {
-										verificationToken: verificationToken
+									const webhookInfo = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${storedWebhookId}`);
+									console.log('EmailConnect: Webhook info after update:', {
+										id: webhookInfo.id,
+										verified: webhookInfo.verified,
+										active: webhookInfo.active
 									});
-									console.log('EmailConnect: Successfully verified updated webhook');
-								} catch (verificationError) {
-									console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
-									// Don't fail the entire operation if verification fails
+
+									if (webhookInfo.verified) {
+										console.log('EmailConnect: Webhook is already verified (auto-verified), skipping manual verification');
+									} else {
+										console.log('EmailConnect: Webhook not verified, starting manual verification...');
+
+										// Add a small delay to ensure webhook URL update is processed
+										await new Promise(resolve => setTimeout(resolve, 1000));
+
+										// Verify the updated webhook
+										const verificationToken = storedWebhookId.slice(-5);
+										try {
+											console.log('EmailConnect: Starting webhook verification for webhook:', storedWebhookId);
+											const verifyResponse = await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify`);
+											console.log('EmailConnect: Verification request sent, response:', verifyResponse);
+
+											const completeResponse = await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify/complete`, {
+												verificationToken: verificationToken
+											});
+											console.log('EmailConnect: Verification completed, response:', completeResponse);
+											console.log('EmailConnect: Successfully verified updated webhook');
+										} catch (verificationError) {
+											console.error('EmailConnect: Failed to verify updated webhook:', {
+												error: verificationError,
+												webhookId: storedWebhookId,
+												verificationToken: verificationToken
+											});
+											// Don't fail the entire operation if verification fails
+										}
+									}
+								} catch (infoError) {
+									console.error('EmailConnect: Failed to get webhook info, skipping verification check:', infoError);
 								}
 
 								// Ensure webhook-alias linkage is maintained after URL update
@@ -397,18 +426,47 @@ export class EmailConnectTrigger implements INodeType {
 									description: description
 								});
 
-								console.log('EmailConnect: Successfully updated webhook URL, now verifying...');
+								console.log('EmailConnect: Successfully updated webhook URL');
 
-								// Verify the updated webhook
-								const verificationToken = matchingWebhook.id.slice(-5);
+								// Check if webhook is already verified (n8n webhooks are auto-verified)
 								try {
-									await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify`);
-									await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify/complete`, {
-										verificationToken: verificationToken
+									const webhookInfo = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${matchingWebhook.id}`);
+									console.log('EmailConnect: Webhook info after update:', {
+										id: webhookInfo.id,
+										verified: webhookInfo.verified,
+										active: webhookInfo.active
 									});
-									console.log('EmailConnect: Successfully verified updated webhook');
-								} catch (verificationError) {
-									console.warn('EmailConnect: Failed to verify updated webhook:', verificationError);
+
+									if (webhookInfo.verified) {
+										console.log('EmailConnect: Webhook is already verified (auto-verified), skipping manual verification');
+									} else {
+										console.log('EmailConnect: Webhook not verified, starting manual verification...');
+
+										// Add a small delay to ensure webhook URL update is processed
+										await new Promise(resolve => setTimeout(resolve, 1000));
+
+										// Verify the updated webhook
+										const verificationToken = matchingWebhook.id.slice(-5);
+										try {
+											console.log('EmailConnect: Starting webhook verification for existing webhook:', matchingWebhook.id);
+											const verifyResponse = await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify`);
+											console.log('EmailConnect: Verification request sent, response:', verifyResponse);
+
+											const completeResponse = await emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify/complete`, {
+												verificationToken: verificationToken
+											});
+											console.log('EmailConnect: Verification completed, response:', completeResponse);
+											console.log('EmailConnect: Successfully verified updated webhook');
+										} catch (verificationError) {
+											console.error('EmailConnect: Failed to verify updated webhook:', {
+												error: verificationError,
+												webhookId: matchingWebhook.id,
+												verificationToken: verificationToken
+											});
+										}
+									}
+								} catch (infoError) {
+									console.error('EmailConnect: Failed to get webhook info, skipping verification check:', infoError);
 								}
 
 								// Ensure webhook-alias linkage is maintained after URL update
@@ -777,6 +835,37 @@ export class EmailConnectTrigger implements INodeType {
 		}
 
 		const emailData = bodyData as any;
+
+		// Check if this is a webhook verification payload
+		if (emailData.type === 'webhook_verification') {
+			console.log('EmailConnect: Received webhook verification payload:', {
+				type: emailData.type,
+				verification_token: emailData.verification_token,
+				webhook_id: emailData.webhook?.id,
+				timestamp: emailData.timestamp,
+				currentTime: new Date().toISOString()
+			});
+
+			// For verification payloads, return a minimal response that doesn't trigger workflow execution
+			// This prevents verification payloads from cluttering your workflow runs
+			return {
+				workflowData: [
+					[
+						{
+							json: {
+								__emailconnect_internal: true,
+								type: 'webhook_verification',
+								message: 'Webhook verification received - this should not trigger workflow logic',
+								verification_token: emailData.verification_token,
+								webhook_id: emailData.webhook?.id,
+								receivedAt: new Date().toISOString(),
+								note: 'This is an internal verification payload and should be ignored by your workflow'
+							},
+						},
+					],
+				],
+			};
+		}
 
 		// For any data (including EmailConnect test payloads), pass it through
 		// This ensures users can test with your UI and see the exact payload structure
