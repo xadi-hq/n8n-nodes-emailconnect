@@ -15,14 +15,8 @@ async function ensureWebhookAliasLinkage(context, webhookId) {
         const domainId = context.getNodeParameter('domainId');
         const aliasMode = context.getNodeParameter('aliasMode');
         let aliasId = '';
-        // Get aliasId based on mode
-        if (aliasMode === 'existing') {
-            aliasId = context.getNodeParameter('aliasId');
-        }
-        else {
-            // For 'create' and 'domain' modes, get aliasId from stored data
-            aliasId = context.getWorkflowStaticData('node').aliasId;
-        }
+        // Get aliasId from stored data (all modes now use the same storage pattern)
+        aliasId = context.getWorkflowStaticData('node').aliasId;
         console.log('EmailConnect: Ensuring webhook-alias linkage:', {
             webhookId,
             aliasId,
@@ -48,7 +42,7 @@ async function ensureWebhookAliasLinkage(context, webhookId) {
                 console.log('EmailConnect: Alias-webhook linkage is correct');
             }
         }
-        else if (aliasMode === 'domain') {
+        else if (aliasMode === 'catchall') {
             // For domain mode, ensure domain webhook is linked
             const domain = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/domains/${domainId}`);
             if (domain.webhookId !== webhookId) {
@@ -155,53 +149,49 @@ class EmailConnectTrigger {
                     options: [
                         {
                             name: 'Use Domain Catch-All',
-                            value: 'domain',
+                            value: 'catchall',
                             description: 'Route ALL emails to this domain through this workflow (*@yourdomain.com)',
                         },
                         {
-                            name: 'Select Existing Alias',
-                            value: 'existing',
-                            description: 'Use an existing email alias (e.g., support@yourdomain.com)',
-                        },
-                        {
-                            name: 'Create New Alias',
-                            value: 'create',
-                            description: 'Create a new email alias for this workflow',
+                            name: 'Use Specific Alias',
+                            value: 'specific',
+                            description: 'Route specific email address to this webhook (will create if doesn\'t exist, update if exists)',
                         },
                     ],
-                    default: 'existing',
+                    default: 'specific',
                     description: 'Choose how to configure email routing for this trigger. Each option determines which emails will activate this workflow.',
                 },
                 {
-                    displayName: 'Alias Name or ID',
-                    name: 'aliasId',
-                    type: 'options',
-                    typeOptions: {
-                        loadOptionsMethod: 'getAliasesForDomain',
-                    },
-                    displayOptions: {
-                        show: {
-                            aliasMode: ['existing'],
-                        },
-                    },
-                    default: '',
-                    hint: 'Only emails sent to this specific alias will trigger the workflow',
-                    description: 'Select a specific alias to configure. Only emails to this alias will trigger the workflow. If no aliases appear, create one in your EmailConnect dashboard first. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-                },
-                {
-                    displayName: 'Local Part',
-                    name: 'newAliasLocalPart',
+                    displayName: 'Alias Local Part',
+                    name: 'aliasLocalPart',
                     type: 'string',
                     displayOptions: {
                         show: {
-                            aliasMode: ['create'],
+                            aliasMode: ['specific'],
                         },
                     },
                     default: '',
                     required: true,
-                    hint: 'This will create a new email alias automatically',
-                    description: 'The local part of the email address (before @). For example, "support" creates support@yourdomain.com. The alias will be created automatically and linked to this workflow.',
-                    placeholder: 'e.g. support',
+                    placeholder: 'support',
+                    hint: 'Smart create/update: will use existing alias or create new one if it doesn\'t exist',
+                    description: 'The local part of the email address (before @). For example, "support" creates support@yourdomain.com. If the alias already exists, its webhook will be updated. If it doesn\'t exist, a new alias will be created.',
+                },
+                {
+                    displayName: 'Webhook Name',
+                    name: 'webhookName',
+                    type: 'string',
+                    default: 'N8N Email Handler',
+                    required: true,
+                    placeholder: 'Support Email Handler',
+                    description: 'A descriptive name for this webhook configuration',
+                },
+                {
+                    displayName: 'Webhook Description',
+                    name: 'webhookDescription',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'Handles support emails via N8N workflow',
+                    description: 'Optional description for this webhook configuration',
                 },
             ],
         };
@@ -444,14 +434,9 @@ class EmailConnectTrigger {
                     const webhookUrl = this.getNodeWebhookUrl('default');
                     const domainId = this.getNodeParameter('domainId');
                     const aliasMode = this.getNodeParameter('aliasMode');
+                    const webhookName = this.getNodeParameter('webhookName');
+                    const webhookDescription = this.getNodeParameter('webhookDescription');
                     let aliasId = '';
-                    // Handle different alias modes
-                    if (aliasMode === 'existing') {
-                        aliasId = this.getNodeParameter('aliasId');
-                        if (!aliasId) {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Alias ID is required when using existing alias mode');
-                        }
-                    }
                     try {
                         // Store previous webhook IDs for restoration on delete
                         let previousWebhookId = '';
@@ -501,78 +486,53 @@ class EmailConnectTrigger {
                         }
                         let webhookId;
                         let createdAliasId;
-                        if (aliasMode === 'existing') {
-                            // For existing aliases, use the traditional approach
-                            // Step 1: Create webhook
-                            const webhookData = {
-                                name: `n8n trigger webhook - ${this.getNode().name}`,
-                                url: webhookUrl,
-                                description: `Auto-created webhook for n8n trigger node: ${this.getNode().name}`,
-                            };
-                            const createdWebhook = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', webhookData);
-                            webhookId = createdWebhook.webhook.id;
-                            // Step 2: Update existing alias webhook
-                            await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-                                webhookId: webhookId
-                            });
-                            // Step 3: Auto-verify webhook
-                            const verificationToken = webhookId.slice(-5);
-                            try {
-                                await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${webhookId}/verify`);
-                                await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
-                                    verificationToken: verificationToken
-                                });
-                            }
-                            catch (verificationError) {
-                                // Clean up on verification failure
-                                try {
-                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
-                                }
-                                catch (cleanupError) {
-                                    console.warn('Failed to cleanup webhook after verification failure:', cleanupError);
-                                }
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Webhook verification failed: ${verificationError}`);
-                            }
+                        // Use the new atomic endpoint for all modes
+                        const webhookAliasData = {
+                            domainId,
+                            webhookUrl,
+                            webhookName,
+                            webhookDescription,
+                            firstOrCreate: true, // Enable smart create/update logic
+                            updateWebhookData: true, // Update existing webhook data
+                            autoVerify: true, // Use auto-verification
+                        };
+                        if (aliasMode === 'catchall') {
+                            // Create catch-all alias with domain synchronization
+                            webhookAliasData.aliasType = 'catchall';
+                            webhookAliasData.syncWithDomain = true;
                         }
-                        else {
-                            // For new alias creation (both 'create' and 'domain' modes), use the new atomic endpoint
-                            const webhookAliasData = {
-                                domainId,
-                                webhookUrl,
-                                webhookName: `n8n trigger webhook - ${this.getNode().name}`,
-                                webhookDescription: `Auto-created webhook for n8n trigger node: ${this.getNode().name}`,
-                                autoVerify: true, // Use auto-verification
-                            };
-                            if (aliasMode === 'create') {
-                                // Create specific alias
-                                const newAliasLocalPart = this.getNodeParameter('newAliasLocalPart');
-                                webhookAliasData.aliasType = 'specific';
-                                webhookAliasData.localPart = newAliasLocalPart;
+                        else if (aliasMode === 'specific') {
+                            // Create or update specific alias
+                            const aliasLocalPart = this.getNodeParameter('aliasLocalPart');
+                            if (!aliasLocalPart) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Alias local part is required for specific alias mode');
                             }
-                            else if (aliasMode === 'domain') {
-                                // Create catch-all alias
-                                webhookAliasData.aliasType = 'catchall';
-                                webhookAliasData.syncWithDomain = true; // Enable domain synchronization
+                            webhookAliasData.aliasType = 'specific';
+                            webhookAliasData.localPart = aliasLocalPart;
+                        }
+                        try {
+                            const result = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
+                            if (!result.success) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
                             }
-                            try {
-                                const result = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
-                                if (!result.success) {
-                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create webhook and alias: ${result.error || 'Unknown error'}`);
-                                }
-                                webhookId = result.webhook.id;
-                                createdAliasId = result.alias.id;
-                                aliasId = createdAliasId || ''; // Set aliasId for storage
-                                console.log('EmailConnect Trigger - Successfully created webhook and alias:', {
-                                    webhookId,
-                                    aliasId: createdAliasId,
-                                    aliasEmail: result.alias.email,
-                                    webhookVerified: result.webhook.verified,
-                                    domainSynced: (_a = result.domain) === null || _a === void 0 ? void 0 : _a.webhookUpdated
-                                });
-                            }
-                            catch (error) {
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create webhook and alias: ${error}`);
-                            }
+                            webhookId = result.webhook.id;
+                            createdAliasId = result.alias.id;
+                            aliasId = createdAliasId || '';
+                            console.log('EmailConnect Trigger - Successfully created/updated webhook and alias:', {
+                                action: result.action,
+                                webhookId,
+                                aliasId: createdAliasId,
+                                aliasEmail: result.alias.email,
+                                webhookVerified: result.webhook.verified,
+                                domainSynced: (_a = result.domain) === null || _a === void 0 ? void 0 : _a.webhookUpdated,
+                                warning: result.warning
+                            });
+                            // Log user-friendly message about what happened
+                            const actionMessage = result.action === 'created' ? 'Created new' : 'Updated existing';
+                            console.log(`EmailConnect: ${actionMessage} alias ${result.alias.email} with webhook ${webhookId}`);
+                        }
+                        catch (error) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${error}`);
                         }
                         // Store configuration for cleanup later
                         console.log('EmailConnect Trigger Create - Storing configuration for cleanup:', {
@@ -749,11 +709,8 @@ class EmailConnectTrigger {
         const domainId = this.getNodeParameter('domainId');
         const aliasMode = this.getNodeParameter('aliasMode');
         let aliasId = '';
-        // Get aliasId based on mode
-        if (aliasMode === 'existing') {
-            aliasId = this.getNodeParameter('aliasId');
-        }
-        // For 'create' and 'domain' modes, the aliasId is stored in static data after creation
+        // For all modes, the aliasId is stored in static data after creation
+        aliasId = this.getWorkflowStaticData('node').aliasId;
         // Always accept and process any data - return 200 with the received data
         if (!bodyData || typeof bodyData !== 'object') {
             // Return test response for empty/invalid data

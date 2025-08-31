@@ -159,9 +159,9 @@ describe('EmailConnect Node Validation', () => {
 
       const domainId = description.properties.find(p => p.name === 'domainId');
       const aliasMode = description.properties.find(p => p.name === 'aliasMode');
-      const aliasId = description.properties.find(p => p.name === 'aliasId');
-      const newAliasLocalPart = description.properties.find(p => p.name === 'newAliasLocalPart');
-
+      const aliasLocalPart = description.properties.find(p => p.name === 'aliasLocalPart');
+      const webhookName = description.properties.find(p => p.name === 'webhookName');
+      const webhookDescription = description.properties.find(p => p.name === 'webhookDescription');
 
       expect(domainId).toBeDefined();
       expect(domainId.type).toBe('options');
@@ -170,22 +170,23 @@ describe('EmailConnect Node Validation', () => {
 
       expect(aliasMode).toBeDefined();
       expect(aliasMode.type).toBe('options');
-      expect(aliasMode.options).toHaveLength(3);
-      expect(aliasMode.default).toBe('existing');
+      expect(aliasMode.options).toHaveLength(2);
+      expect(aliasMode.default).toBe('specific');
       const aliasModeValues = aliasMode.options.map(o => o.value);
-      expect(aliasModeValues).toContain('domain');
-      expect(aliasModeValues).toContain('existing');
-      expect(aliasModeValues).toContain('create');
+      expect(aliasModeValues).toContain('catchall');
+      expect(aliasModeValues).toContain('specific');
 
-      expect(aliasId).toBeDefined();
-      expect(aliasId.type).toBe('options');
-      expect(aliasId.typeOptions.loadOptionsMethod).toBe('getAliasesForDomain');
-      expect(aliasId.displayOptions.show.aliasMode).toContain('existing');
+      expect(aliasLocalPart).toBeDefined();
+      expect(aliasLocalPart.type).toBe('string');
+      expect(aliasLocalPart.required).toBe(true);
+      expect(aliasLocalPart.displayOptions.show.aliasMode).toContain('specific');
 
-      expect(newAliasLocalPart).toBeDefined();
-      expect(newAliasLocalPart.type).toBe('string');
-      expect(newAliasLocalPart.required).toBe(true);
-      expect(newAliasLocalPart.displayOptions.show.aliasMode).toContain('create');
+      expect(webhookName).toBeDefined();
+      expect(webhookName.type).toBe('string');
+      expect(webhookName.required).toBe(true);
+
+      expect(webhookDescription).toBeDefined();
+      expect(webhookDescription.type).toBe('string');
     });
   });
 
