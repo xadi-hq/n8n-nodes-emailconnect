@@ -57,5 +57,8 @@ module.exports = defineConfig([{
     rules: {
         "n8n-nodes-base/node-class-description-inputs-wrong-regular-node": "off",
         "n8n-nodes-base/node-class-description-outputs-wrong": "off",
+        "n8n-nodes-base/node-param-display-name-miscased": "off",
+        "n8n-nodes-base/node-param-display-name-wrong-for-dynamic-options": "off",
+        "n8n-nodes-base/node-param-description-missing-final-period": "off",
     },
 }]);

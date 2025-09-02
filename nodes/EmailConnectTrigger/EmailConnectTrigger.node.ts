@@ -87,7 +87,7 @@ async function ensureWebhookAliasLinkage(context: IHookFunctions, webhookId: str
 
 export class EmailConnectTrigger implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'EmailConnect Trigger',
+		displayName: 'EmailConnect trigger Trigger',
 		name: 'emailConnectTrigger',
 		icon: 'file:emailconnect.svg',
 		group: ['trigger'],
@@ -121,7 +121,7 @@ export class EmailConnectTrigger implements INodeType {
 				typeOptions: {
 					theme: 'info'
 				},
-				description: '<strong>🇪🇺 100% EU-operated email service</strong>• Multi-alias support for organized email routing• Free to start: 50 emails per month• Enterprise-grade security and compliance<strong>Quick Setup:</strong>1. <a href="https://emailconnect.eu/register" target="_blank">Register your account →</a>2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key →</a>3. Configure your domain and aliases below',
+				description: '<strong>🇪🇺 100% EU-operated email service</strong>• Multi-alias support for organized email routing• Free to start: 50 emails per month• Enterprise-grade security and compliance<strong>Quick Setup:</strong>1. <a href="https://emailconnect.eu/login" target="_blank">Start today →</a>2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key →</a>3. Configure your domain and aliases below',
 			},
 			{
 				displayName: 'Events',
@@ -129,17 +129,17 @@ export class EmailConnectTrigger implements INodeType {
 				type: 'multiOptions',
 				options: [
 					{
-						name: 'Email Received',
+						name: 'Email received',
 						value: 'email.received',
 						description: 'Triggers when an email is received and processed',
 					},
 					{
-						name: 'Email Processed',
+						name: 'Email processed',
 						value: 'email.processed',
 						description: 'Triggers when an email has been successfully processed',
 					},
 					{
-						name: 'Email Failed',
+						name: 'Email failed',
 						value: 'email.failed',
 						description: 'Triggers when email processing fails',
 					},
@@ -148,7 +148,7 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'The events to listen for',
 			},
 			{
-				displayName: 'Domain Name or ID',
+				displayName: 'Domain name or ID',
 				name: 'domainId',
 				type: 'options',
 				typeOptions: {
@@ -160,17 +160,17 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. <strong>Note:</strong> Domain must be verified in your EmailConnect account first. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Alias Configuration',
+				displayName: 'Alias configuration',
 				name: 'aliasMode',
 				type: 'options',
 				options: [
 					{
-						name: 'Use Domain Catch-All',
+						name: 'Use domain catch-all',
 						value: 'catchall',
 						description: 'Route ALL emails to this domain through this workflow (*@yourdomain.com)',
 					},
 					{
-						name: 'Use Specific Alias',
+						name: 'Use specific alias',
 						value: 'specific',
 						description: 'Route specific email address to this webhook (will create if doesn\'t exist, update if exists)',
 					},
@@ -179,7 +179,7 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'Choose how to configure email routing for this trigger. Each option determines which emails will activate this workflow.',
 			},
 			{
-				displayName: 'Alias Local Part',
+				displayName: 'Alias',
 				name: 'aliasLocalPart',
 				type: 'string',
 				displayOptions: {
@@ -194,16 +194,15 @@ export class EmailConnectTrigger implements INodeType {
 				description: 'The local part of the email address (before @). For example, "support" creates support@yourdomain.com. If the alias already exists, its webhook will be updated. If it doesn\'t exist, a new alias will be created.',
 			},
 			{
-				displayName: 'Webhook Name',
+				displayName: 'Webhook name',
 				name: 'webhookName',
 				type: 'string',
-				default: 'N8N Email Handler',
-				required: true,
-				placeholder: 'Support Email Handler',
-				description: 'A descriptive name for this webhook configuration',
+				default: '',
+				placeholder: 'Alias endpoint trigger',
+				description: 'A descriptive name for this webhook configuration. If left empty, will default to the email address + "endpoint trigger".',
 			},
 			{
-				displayName: 'Webhook Description',
+				displayName: 'Webhook description',
 				name: 'webhookDescription',
 				type: 'string',
 				default: '',
@@ -482,11 +481,28 @@ export class EmailConnectTrigger implements INodeType {
 				const webhookUrl = this.getNodeWebhookUrl('default');
 				const domainId = this.getNodeParameter('domainId') as string;
 				const aliasMode = this.getNodeParameter('aliasMode') as string;
-				const webhookName = this.getNodeParameter('webhookName') as string;
+				let webhookName = this.getNodeParameter('webhookName') as string;
 				const webhookDescription = this.getNodeParameter('webhookDescription') as string;
 				let aliasId = '';
 
 				try {
+					// Generate default webhook name if none provided
+					if (!webhookName || webhookName.trim() === '') {
+						// Get domain information to construct the email address
+						const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+						const domainName = domain.domain;
+						
+						if (aliasMode === 'catchall') {
+							webhookName = `*@${domainName} endpoint trigger`;
+						} else if (aliasMode === 'specific') {
+							const aliasLocalPart = this.getNodeParameter('aliasLocalPart') as string;
+							if (aliasLocalPart) {
+								webhookName = `${aliasLocalPart}@${domainName} endpoint trigger`;
+							} else {
+								webhookName = `${domainName} endpoint trigger`;
+							}
+						}
+					}
 					// Store previous webhook IDs for restoration on delete
 					let previousWebhookId = '';
 					let previousDomainWebhookId = '';
