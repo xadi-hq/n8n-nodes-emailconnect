@@ -46,12 +46,12 @@ Before using the nodes, you need to configure your EmailConnect API credentials:
 1. Go to **Credentials** in your n8n instance
 2. Click **Create New Credential**
 3. Search for **EmailConnect API**
-4. Enter your EmailConnect API key (get it from [EmailConnect Dashboard](https://emailconnect.eu/settings))
+4. Enter your EmailConnect API key (get it from [EmailConnect Dashboard](https://app.emailconnect.eu/settings))
 
 ### 2. EmailConnect Service Setup
 
 Make sure you have:
-- An active EmailConnect account at [emailconnect.eu](https://emailconnect.eu)
+- An active EmailConnect account at [emailconnect.eu](https://app.emailconnect.eu)
 - At least one verified domain configured
 - API access enabled in your account settings
 
@@ -240,7 +240,7 @@ This n8n node requires an EmailConnect API key with **"API User"** scope, which 
 
 **Impact**: Deleted trigger nodes may leave "orphaned" webhooks in your EmailConnect account.
 
-**Solution**: Manually clean up unused webhooks via the [EmailConnect Webhooks Dashboard](https://emailconnect.eu/webhooks).
+**Solution**: Manually clean up unused webhooks via the [EmailConnect Webhooks Dashboard](https://app.emailconnect.eu/webhooks).
 
 **Why this happens**: n8n no longer calls webhook deregistration methods to improve performance, assuming third-party services will handle webhook retries gracefully.
 
@@ -275,7 +275,7 @@ This n8n node requires an EmailConnect API key with **"API User"** scope, which 
 ### Getting Help
 
 - **EmailConnect Documentation**: [https://emailconnect.eu/docs](https://emailconnect.eu/docs)
-- **EmailConnect Dashboard**: [https://emailconnect.eu](https://emailconnect.eu) (for webhook management)
+- **EmailConnect Dashboard**: [https://app.emailconnect.eu](https://app.emailconnect.eu) (for webhook management)
 - **EmailConnect Support**: [support@emailconnect.eu](mailto:support@emailconnect.eu)
 - **n8n Community**: [https://community.n8n.io](https://community.n8n.io)
 - **GitHub Issues**: [https://github.com/xadi-hq/n8n-nodes-emailconnect/issues](https://github.com/xadi-hq/n8n-nodes-emailconnect/issues)

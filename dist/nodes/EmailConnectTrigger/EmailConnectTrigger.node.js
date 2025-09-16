@@ -104,7 +104,7 @@ class EmailConnectTrigger {
                     typeOptions: {
                         theme: 'info'
                     },
-                    description: '<strong>🇪🇺 100% EU-operated email service</strong>• Multi-alias support for organized email routing• Free to start: 50 emails per month• Enterprise-grade security and compliance<strong>Quick Setup:</strong>1. <a href="https://emailconnect.eu/login" target="_blank">Start today →</a>2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key →</a>3. Configure your domain and aliases below',
+                    description: '<strong>🇪🇺 100% EU-operated email service</strong>• Multi-alias support for organized email routing• Free to start: 50 emails per month• Enterprise-grade security and compliance<strong>Quick Setup:</strong>1. <a href="https://app.emailconnect.eu/login" target="_blank">Start today →</a>2. <a href="https://app.emailconnect.eu/settings/api-keys" target="_blank">Get your API key →</a>3. Configure your domain and aliases below',
                 },
                 {
                     displayName: 'Events',

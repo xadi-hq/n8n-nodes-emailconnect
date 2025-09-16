@@ -3,7 +3,7 @@
   "info": {
     "title": "EmailConnect.eu API",
     "version": "1.0.0",
-    "description": "\n# EmailConnect.eu API Documentation\n\nWelcome to the EmailConnect.eu API! This API allows you to programmatically manage your email domains, aliases, and webhooks.\n\n## Authentication\n\nAll API endpoints require authentication using your API key. Include your API key in the request header:\n\n```\nX-API-KEY: your-api-key-here\n```\n\nYou can find your API key in your [account settings](https://emailconnect.eu/settings).\n\n## Rate Limits\n\nAPI requests are rate-limited to ensure fair usage:\n- **Free Plan**: 100 requests per hour\n- **Pro Plan**: 1,000 requests per hour\n- **Enterprise Plan**: 10,000 requests per hour\n\n## Support\n\nNeed help? Contact us at [support@emailconnect.eu](mailto:support@emailconnect.eu) or visit our [help center](https://emailconnect.eu/docs).\n    ",
+    "description": "\n# EmailConnect.eu API documentation\n\nWelcome to the EmailConnect.eu API! This API allows you to programmatically manage your email domains, aliases, and webhooks.\n\n## Authentication\n\nAll API endpoints require authentication using your API key. Include your API key in the request header:\n\n```\nX-API-KEY: your-api-key-here\n```\n\nYou can find your API key in your [account settings](https://app.emailconnect.eu/settings).\n\n## Rate limits\n\nAPI requests are rate-limited to ensure fair usage:\n- **Free plan**: 100 requests per hour\n- **Pro plan**: 1,000 requests per hour\n- **Enterprise plan**: 10,000 requests per hour\n\n## Support\n\nNeed help? Contact us at [support@emailconnect.eu](mailto:support@emailconnect.eu) or visit our [help center](https://emailconnect.eu/docs).\n    ",
     "contact": {
       "name": "EmailConnect.eu Support",
       "email": "support@emailconnect.eu",
@@ -20,7 +20,7 @@
   },
   "servers": [
     {
-      "url": "https://emailconnect.eu",
+      "url": "https://app.emailconnect.eu",
       "description": "Production server"
     }
   ],

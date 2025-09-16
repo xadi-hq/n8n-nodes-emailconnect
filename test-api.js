@@ -10,7 +10,7 @@ const https = require('https');
 function makeApiRequest(apiKey, path) {
     return new Promise((resolve, reject) => {
         const options = {
-            hostname: 'emailconnect.eu',
+            hostname: 'app.emailconnect.eu',
             port: 443,
             path: path,
             method: 'GET',

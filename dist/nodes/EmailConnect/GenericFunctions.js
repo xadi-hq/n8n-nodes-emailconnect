@@ -14,7 +14,7 @@ async function emailConnectApiRequest(method, resource, body = {}, qs = {}, uri,
         },
         ...(hasBody && { body }),
         qs,
-        url: uri || `https://emailconnect.eu${resource}`,
+        url: uri || `https://app.emailconnect.eu${resource}`,
         json: true,
     };
     // Debug logging

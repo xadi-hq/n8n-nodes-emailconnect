@@ -35,8 +35,8 @@ Complete API reference for the EmailConnect n8n community node, covering all ope
 ```
 
 **Setup Instructions**:
-1. Register at [EmailConnect](https://emailconnect.eu/register)
-2. Get API key from [Settings](https://emailconnect.eu/settings)
+1. Register at [EmailConnect](https://app.emailconnect.eu/login)
+2. Get API key from [Settings](https://app.emailconnect.eu/settings/api-keys)
 3. Ensure key has "API User" scope permissions
 
 ---

@@ -30,7 +30,7 @@ export async function emailConnectApiRequest(
 		},
 		...(hasBody && { body }),
 		qs,
-		url: uri || `https://emailconnect.eu${resource}`,
+		url: uri || `https://app.emailconnect.eu${resource}`,
 		json: true,
 	};
 

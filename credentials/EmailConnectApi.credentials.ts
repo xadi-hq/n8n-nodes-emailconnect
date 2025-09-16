@@ -20,8 +20,8 @@ export class EmailConnectApi implements ICredentialType {
 			},
 			description: `
 				<strong>Get your EmailConnect API key:</strong><br/>
-				1. <a href="https://emailconnect.eu/register" target="_blank">Create account (free)</a><br/>
-				2. <a href="https://emailconnect.eu/settings" target="_blank">Copy API key from settings</a><br/>
+				1. <a href="https://app.emailconnect.eu/login" target="_blank">Create account (free)</a><br/>
+				2. <a href="https://app.emailconnect.eu/settings/api-keys" target="_blank">Copy API key from settings</a><br/>
 				<br/>
 				<strong>🇪🇺 100% EU-operated • Free 50 emails/month</strong>
 			`,
@@ -33,7 +33,7 @@ export class EmailConnectApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			hint: 'Found in your EmailConnect account settings',
-			description: 'Your EmailConnect API key from <a href="https://emailconnect.eu/settings" target="_blank">account settings</a>. The key starts with "ec_" and is used to authenticate all API requests.',
+			description: 'Your EmailConnect API key from <a href="https://app.emailconnect.eu/settings/api-keys" target="_blank">account settings</a>. The key starts with "ec_" and is used to authenticate all API requests.',
 			required: true,
 		},
 	];
@@ -51,7 +51,7 @@ export class EmailConnectApi implements ICredentialType {
 	// Test the connection
 	test: ICredentialTestRequest = {
 		request: {
-			baseURL: 'https://emailconnect.eu',
+			baseURL: 'https://app.emailconnect.eu',
 			url: '/api/domains',
 			method: 'GET',
 		},

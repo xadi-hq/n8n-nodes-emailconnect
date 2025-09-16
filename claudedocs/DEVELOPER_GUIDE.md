@@ -337,7 +337,7 @@ export async function emailConnectApiRequest(
     method,
     body,
     qs: query,
-    uri: `https://emailconnect.eu${resource}`,
+    uri: `https://app.emailconnect.eu${resource}`,
     headers: {
       'X-API-KEY': credentials.apiKey,
       'Content-Type': 'application/json',
@@ -627,8 +627,8 @@ export class EmailConnectApi implements ICredentialType {
         • Free to start: 50 emails per month<br/>
         <br/>
         <strong>Quick Setup:</strong><br/>
-        1. <a href="https://emailconnect.eu/register" target="_blank">Register your account</a><br/>
-        2. <a href="https://emailconnect.eu/settings" target="_blank">Get your API key</a><br/>
+        1. <a href="https://app.emailconnect.eu/register" target="_blank">Register your account</a><br/>
+        2. <a href="https://app.emailconnect.eu/settings" target="_blank">Get your API key</a><br/>
         3. Enter your API key below
       `,
     },
@@ -642,7 +642,7 @@ export class EmailConnectApi implements ICredentialType {
       default: '',
       placeholder: 'your-api-key-here',
       description: 'Your EmailConnect API key with "API User" scope',
-      hint: 'You can find your API key in the <a href="https://emailconnect.eu/settings" target="_blank">EmailConnect Settings</a>',
+      hint: 'You can find your API key in the <a href="https://app.emailconnect.eu/settings" target="_blank">EmailConnect Settings</a>',
     },
   ];
 
@@ -657,7 +657,7 @@ export class EmailConnectApi implements ICredentialType {
 
   test: ICredentialTestRequest = {
     request: {
-      baseURL: 'https://emailconnect.eu',
+      baseURL: 'https://app.emailconnect.eu',
       url: '/api/domains',
       method: 'GET',
     },
@@ -679,7 +679,7 @@ export class EmailConnectApi implements ICredentialType {
 // Advanced credential testing with better error messages
 test: ICredentialTestRequest = {
   request: {
-    baseURL: 'https://emailconnect.eu',
+    baseURL: 'https://app.emailconnect.eu',
     url: '/api/domains',
     method: 'GET',
   },
@@ -1034,7 +1034,7 @@ case 'customResource':
 ### **EmailConnect API**
 - [EmailConnect Documentation](https://emailconnect.eu/docs)
 - [API Reference](../emailconnect-openapi.json)
-- [Dashboard](https://emailconnect.eu)
+- [Dashboard](https://app.emailconnect.eu)
 
 ### **Project Documentation**
 - [User Guide](../README.md)

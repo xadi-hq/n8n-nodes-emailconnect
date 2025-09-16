@@ -341,8 +341,8 @@ Create/Update Aliases → Configure Webhooks → Monitor Events
 
 ### **For Users**
 1. Install via n8n Community Nodes: `n8n-nodes-emailconnect`
-2. Register at [EmailConnect](https://emailconnect.eu/register)
-3. Get API key from [EmailConnect Settings](https://emailconnect.eu/settings)
+2. Register at [EmailConnect](https://app.emailconnect.eu/login)
+3. Get API key from [EmailConnect Settings](https://app.emailconnect.eu/settings/api-keys)
 4. Configure credentials in n8n
 5. Start building email automation workflows
 
