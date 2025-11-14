@@ -294,6 +294,15 @@ export class EmailConnectTrigger implements INodeType {
 			const storedDomainId = this.getWorkflowStaticData('node').domainId as string;
 			const storedAliasLocalPart = this.getWorkflowStaticData('node').aliasLocalPart as string || '';
 
+
+			// If we have a stored webhook but no stored alias config, this is from old version
+			// Force recreation to properly set up alias configuration tracking
+			if (storedWebhookId && !storedAliasMode) {
+				console.log('EmailConnect: Migrating from old version - no alias config stored, forcing recreation');
+				delete this.getWorkflowStaticData('node').webhookId;
+				delete this.getWorkflowStaticData('node').aliasId;
+				return false;
+			}
 			// Detect configuration changes
 			const configChanged =
 				(storedAliasMode && storedAliasMode !== currentAliasMode) ||
