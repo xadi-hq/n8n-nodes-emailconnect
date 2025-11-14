@@ -255,6 +255,31 @@ class EmailConnectTrigger {
                         storedWebhookId: storedWebhookId ? `${storedWebhookId.substring(0, 8)}...` : 'none',
                         hasStoredId: !!storedWebhookId
                     });
+                    // Check if alias configuration has changed - if so, force recreation
+                    const currentAliasMode = this.getNodeParameter('aliasMode');
+                    const currentDomainId = this.getNodeParameter('domainId');
+                    const currentAliasLocalPart = currentAliasMode === 'specific' ? this.getNodeParameter('aliasLocalPart') : '';
+                    // Get stored configuration
+                    const storedAliasMode = this.getWorkflowStaticData('node').aliasMode;
+                    const storedDomainId = this.getWorkflowStaticData('node').domainId;
+                    const storedAliasLocalPart = this.getWorkflowStaticData('node').aliasLocalPart || '';
+                    // Detect configuration changes
+                    const configChanged = (storedAliasMode && storedAliasMode !== currentAliasMode) ||
+                        (storedDomainId && storedDomainId !== currentDomainId) ||
+                        (storedAliasLocalPart && storedAliasLocalPart !== currentAliasLocalPart);
+                    if (configChanged) {
+                        console.log('EmailConnect: Alias configuration changed, forcing recreation:', {
+                            oldConfig: { aliasMode: storedAliasMode, domainId: storedDomainId, localPart: storedAliasLocalPart },
+                            newConfig: { aliasMode: currentAliasMode, domainId: currentDomainId, localPart: currentAliasLocalPart }
+                        });
+                        // Clear stored data to force full recreation
+                        delete this.getWorkflowStaticData('node').webhookId;
+                        delete this.getWorkflowStaticData('node').aliasId;
+                        delete this.getWorkflowStaticData('node').aliasMode;
+                        delete this.getWorkflowStaticData('node').domainId;
+                        delete this.getWorkflowStaticData('node').aliasLocalPart;
+                        return false; // Force create() to be called
+                    }
                     try {
                         // If we have a stored webhook ID, check if it needs URL update
                         if (storedWebhookId) {
@@ -322,16 +347,21 @@ class EmailConnectTrigger {
                                 }
                                 // If URL matches, webhook exists and is current
                                 if (webhook && webhook.url === webhookUrl) {
+                                    // Ensure webhook-alias linkage is correct even if URL didn't change
+                                    await ensureWebhookAliasLinkage(this, storedWebhookId);
                                     return true;
                                 }
                             }
                             catch (webhookError) {
+                                // Clear the invalid stored webhook ID
+                                delete this.getWorkflowStaticData('node').webhookId;
                                 // If the stored webhook doesn't exist anymore, fall through to create new one
                                 console.log('EmailConnect: Stored webhook not found, will create new one:', storedWebhookId);
                                 return false;
                             }
                         }
-                        // Check if a webhook with this URL already exists (original logic for new webhooks)
+                        // No stored webhook ID, check if a webhook with this URL already exists
+                        // This only runs for first-time setup or when stored webhook was invalid
                         const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
                         const webhooks = (response === null || response === void 0 ? void 0 : response.webhooks) || [];
                         // First check for exact URL match
@@ -566,6 +596,11 @@ class EmailConnectTrigger {
                         this.getWorkflowStaticData('node').previousWebhookId = previousWebhookId;
                         this.getWorkflowStaticData('node').previousDomainWebhookId = previousDomainWebhookId;
                         this.getWorkflowStaticData('node').previousCatchAllWebhookId = previousCatchAllWebhookId;
+                        this.getWorkflowStaticData('node').aliasMode = aliasMode;
+                        if (aliasMode === 'specific') {
+                            const aliasLocalPart = this.getNodeParameter('aliasLocalPart');
+                            this.getWorkflowStaticData('node').aliasLocalPart = aliasLocalPart;
+                        }
                         return true;
                     }
                     catch (error) {
