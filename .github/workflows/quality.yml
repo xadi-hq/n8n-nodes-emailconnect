@@ -70,7 +70,7 @@ jobs:
           echo "Total bundle size: $TOTAL_SIZE"
 
       - name: Upload quality reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: quality-reports
           path: |
