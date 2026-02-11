@@ -1,10 +1,10 @@
-import { IHookFunctions, ILoadOptionsFunctions, INodePropertyOptions, INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData } from 'n8n-workflow';
+import { IHookFunctions, INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData } from 'n8n-workflow';
+import { getDomainOptions } from '../EmailConnect/GenericFunctions';
 export declare class EmailConnectTrigger implements INodeType {
     description: INodeTypeDescription;
     methods: {
         loadOptions: {
-            getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
-            getAliasesForDomain(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+            getDomains: typeof getDomainOptions;
         };
     };
     webhookMethods: {

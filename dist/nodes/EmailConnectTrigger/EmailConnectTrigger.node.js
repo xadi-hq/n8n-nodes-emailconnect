@@ -3,74 +3,129 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailConnectTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const GenericFunctions_1 = require("../EmailConnect/GenericFunctions");
-// Helper functions for webhook management
-// Note: Verification is now handled automatically during webhook creation
-// using the webhook ID's last 5 characters as the verification token
-/**
- * Helper function to ensure webhook-alias linkage is maintained
- * This is called after webhook URL updates to prevent orphaned webhooks
- */
+// ---------------------------------------------------------------------------
+// Helper: update a webhook's URL + description, verify if needed, then
+// ensure the alias/domain linkage is still intact.
+// Uses PUT response `verified` field to skip redundant GET.
+// ---------------------------------------------------------------------------
+async function updateWebhookUrlAndVerify(context, webhookId, webhookUrl) {
+    const isTestUrl = webhookUrl.includes('/webhook-test/');
+    const description = `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
+    const putResponse = await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/webhooks/${webhookId}`, {
+        url: webhookUrl,
+        description,
+    });
+    // Use PUT response to decide if manual verification is needed
+    if (!(putResponse === null || putResponse === void 0 ? void 0 : putResponse.verified)) {
+        const verificationToken = webhookId.slice(-5);
+        try {
+            await GenericFunctions_1.emailConnectApiRequest.call(context, 'POST', `/api/webhooks/${webhookId}/verify`);
+            await GenericFunctions_1.emailConnectApiRequest.call(context, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
+                verificationToken,
+            });
+        }
+        catch (verificationError) {
+            console.warn('EmailConnect: webhook verification failed after URL update:', webhookId);
+        }
+    }
+    await ensureWebhookAliasLinkage(context, webhookId);
+}
+// ---------------------------------------------------------------------------
+// Helper: detect whether alias/domain config changed since last save.
+// Returns true if the caller should force recreation.
+// ---------------------------------------------------------------------------
+function detectConfigChange(context) {
+    const staticData = context.getWorkflowStaticData('node');
+    const storedWebhookId = staticData.webhookId;
+    const storedAliasMode = staticData.aliasMode;
+    // Migration: old version had no stored aliasMode → force recreation
+    if (storedWebhookId && !storedAliasMode) {
+        delete staticData.webhookId;
+        delete staticData.aliasId;
+        return true;
+    }
+    const currentAliasMode = context.getNodeParameter('aliasMode');
+    const currentDomainId = context.getNodeParameter('domainId');
+    const currentAliasLocalPart = currentAliasMode === 'specific'
+        ? context.getNodeParameter('aliasLocalPart')
+        : '';
+    const storedDomainId = staticData.domainId;
+    const storedAliasLocalPart = staticData.aliasLocalPart || '';
+    const changed = (storedAliasMode && storedAliasMode !== currentAliasMode) ||
+        (storedDomainId && storedDomainId !== currentDomainId) ||
+        (storedAliasLocalPart && storedAliasLocalPart !== currentAliasLocalPart);
+    if (changed) {
+        delete staticData.webhookId;
+        delete staticData.aliasId;
+        delete staticData.aliasMode;
+        delete staticData.domainId;
+        delete staticData.aliasLocalPart;
+    }
+    return !!changed;
+}
+// ---------------------------------------------------------------------------
+// Helper: try to reuse the stored webhook ID.
+//  - Returns true   → webhook exists & URL matches (or was updated)
+//  - Returns false  → stored webhook gone, static data cleaned up
+//  - Returns undefined → no stored webhook ID
+// ---------------------------------------------------------------------------
+async function tryStoredWebhook(context, webhookUrl) {
+    const staticData = context.getWorkflowStaticData('node');
+    const storedWebhookId = staticData.webhookId;
+    if (!storedWebhookId)
+        return undefined;
+    try {
+        const webhook = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/webhooks/${storedWebhookId}`);
+        if (webhook.url !== webhookUrl) {
+            // URL changed (e.g. test↔prod) — update & verify
+            await updateWebhookUrlAndVerify(context, storedWebhookId, webhookUrl);
+            return true;
+        }
+        // URL matches — nothing changed, skip ensureWebhookAliasLinkage
+        return true;
+    }
+    catch {
+        // Stored webhook no longer exists
+        delete staticData.webhookId;
+        delete staticData.aliasId;
+        return false;
+    }
+}
+// ---------------------------------------------------------------------------
+// Helper: ensure webhook-alias linkage is maintained.
+// Only called after actual URL changes to prevent orphaned webhooks.
+// ---------------------------------------------------------------------------
 async function ensureWebhookAliasLinkage(context, webhookId) {
     try {
         const domainId = context.getNodeParameter('domainId');
         const aliasMode = context.getNodeParameter('aliasMode');
-        let aliasId = '';
-        // Get aliasId from stored data (all modes now use the same storage pattern)
-        aliasId = context.getWorkflowStaticData('node').aliasId;
-        console.log('EmailConnect: Ensuring webhook-alias linkage:', {
-            webhookId,
-            aliasId,
-            aliasMode,
-            domainId
-        });
+        const aliasId = context.getWorkflowStaticData('node').aliasId;
         if (aliasId) {
-            // Verify the alias is still linked to our webhook
             const alias = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
             if (alias.webhookId !== webhookId) {
-                console.log('EmailConnect: Alias webhook linkage broken, restoring:', {
-                    aliasId,
-                    currentWebhookId: alias.webhookId,
-                    expectedWebhookId: webhookId
-                });
-                // Restore the linkage
                 await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-                    webhookId: webhookId
+                    webhookId,
                 });
-                console.log('EmailConnect: Successfully restored alias-webhook linkage');
-            }
-            else {
-                console.log('EmailConnect: Alias-webhook linkage is correct');
             }
         }
         else if (aliasMode === 'catchall') {
-            // For domain mode, ensure domain webhook is linked
             const domain = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/domains/${domainId}`);
             if (domain.webhookId !== webhookId) {
-                console.log('EmailConnect: Domain webhook linkage broken, restoring:', {
-                    domainId,
-                    currentWebhookId: domain.webhookId,
-                    expectedWebhookId: webhookId
-                });
-                // Restore the domain linkage
                 await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/domains/${domainId}/webhook`, {
-                    webhookId: webhookId
+                    webhookId,
                 });
-                console.log('EmailConnect: Successfully restored domain-webhook linkage');
-            }
-            else {
-                console.log('EmailConnect: Domain-webhook linkage is correct');
             }
         }
     }
     catch (error) {
-        console.warn('EmailConnect: Failed to ensure webhook-alias linkage:', error);
-        // Don't throw - this is a recovery operation
+        console.warn('EmailConnect: failed to ensure webhook-alias linkage:', error);
     }
 }
+// ===========================================================================
 class EmailConnectTrigger {
     constructor() {
         this.description = {
-            displayName: 'EmailConnect trigger Trigger',
+            displayName: 'EmailConnect Trigger',
             name: 'emailConnectTrigger',
             icon: 'file:emailconnect.svg',
             group: ['trigger'],
@@ -196,276 +251,54 @@ class EmailConnectTrigger {
         };
         this.methods = {
             loadOptions: {
-                async getDomains() {
-                    try {
-                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
-                        console.log('EmailConnect getDomains response:', response);
-                        // Extract domains array from response object
-                        const domains = response === null || response === void 0 ? void 0 : response.domains;
-                        if (!Array.isArray(domains)) {
-                            console.error('EmailConnect getDomains: Expected domains array, got:', typeof domains, response);
-                            return [];
-                        }
-                        return domains.map((domain) => ({
-                            name: `${domain.domain} (${domain.id})`,
-                            value: domain.id,
-                        }));
-                    }
-                    catch (error) {
-                        console.error('EmailConnect getDomains error:', error);
-                        return [];
-                    }
-                },
-                async getAliasesForDomain() {
-                    try {
-                        const domainId = this.getCurrentNodeParameter('domainId');
-                        console.log('EmailConnect getAliasesForDomain domainId:', domainId);
-                        if (!domainId) {
-                            console.log('EmailConnect getAliasesForDomain: No domainId provided, returning empty array');
-                            return [];
-                        }
-                        const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-                        console.log('EmailConnect getAliasesForDomain response:', response);
-                        // Extract aliases array from response object
-                        const aliases = response === null || response === void 0 ? void 0 : response.aliases;
-                        if (!Array.isArray(aliases)) {
-                            console.error('EmailConnect getAliasesForDomain: Expected aliases array, got:', typeof aliases, response);
-                            return [];
-                        }
-                        return aliases.map((alias) => ({
-                            name: `${alias.email} (${alias.id})`,
-                            value: alias.id,
-                        }));
-                    }
-                    catch (error) {
-                        console.error('EmailConnect getAliasesForDomain error:', error);
-                        return [];
-                    }
-                },
+                getDomains: GenericFunctions_1.getDomainOptions,
             },
         };
         // @ts-ignore (because of request)
         this.webhookMethods = {
             default: {
+                // ------------------------------------------------------------------
+                // checkExists — short orchestrator (~35 lines)
+                // ------------------------------------------------------------------
                 async checkExists() {
                     const webhookUrl = this.getNodeWebhookUrl('default');
-                    const storedWebhookId = this.getWorkflowStaticData('node').webhookId;
-                    console.log('EmailConnect: checkExists called with:', {
-                        webhookUrl,
-                        storedWebhookId: storedWebhookId ? `${storedWebhookId.substring(0, 8)}...` : 'none',
-                        hasStoredId: !!storedWebhookId
-                    });
-                    // Check if alias configuration has changed - if so, force recreation
-                    const currentAliasMode = this.getNodeParameter('aliasMode');
-                    const currentDomainId = this.getNodeParameter('domainId');
-                    const currentAliasLocalPart = currentAliasMode === 'specific' ? this.getNodeParameter('aliasLocalPart') : '';
-                    // Get stored configuration
-                    const storedAliasMode = this.getWorkflowStaticData('node').aliasMode;
-                    const storedDomainId = this.getWorkflowStaticData('node').domainId;
-                    const storedAliasLocalPart = this.getWorkflowStaticData('node').aliasLocalPart || '';
-                    // If we have a stored webhook but no stored alias config, this is from old version
-                    // Force recreation to properly set up alias configuration tracking
-                    if (storedWebhookId && !storedAliasMode) {
-                        console.log('EmailConnect: Migrating from old version - no alias config stored, forcing recreation');
-                        delete this.getWorkflowStaticData('node').webhookId;
-                        delete this.getWorkflowStaticData('node').aliasId;
+                    // 1. Config change → force recreation
+                    if (detectConfigChange(this))
                         return false;
-                    }
-                    // Detect configuration changes
-                    const configChanged = (storedAliasMode && storedAliasMode !== currentAliasMode) ||
-                        (storedDomainId && storedDomainId !== currentDomainId) ||
-                        (storedAliasLocalPart && storedAliasLocalPart !== currentAliasLocalPart);
-                    if (configChanged) {
-                        console.log('EmailConnect: Alias configuration changed, forcing recreation:', {
-                            oldConfig: { aliasMode: storedAliasMode, domainId: storedDomainId, localPart: storedAliasLocalPart },
-                            newConfig: { aliasMode: currentAliasMode, domainId: currentDomainId, localPart: currentAliasLocalPart }
-                        });
-                        // Clear stored data to force full recreation
-                        delete this.getWorkflowStaticData('node').webhookId;
-                        delete this.getWorkflowStaticData('node').aliasId;
-                        delete this.getWorkflowStaticData('node').aliasMode;
-                        delete this.getWorkflowStaticData('node').domainId;
-                        delete this.getWorkflowStaticData('node').aliasLocalPart;
-                        return false; // Force create() to be called
-                    }
+                    // 2. Try the stored webhook ID
+                    const storedResult = await tryStoredWebhook(this, webhookUrl);
+                    if (storedResult !== undefined)
+                        return storedResult;
+                    // 3. Fallback: search all webhooks for URL or UUID match
                     try {
-                        // If we have a stored webhook ID, check if it needs URL update
-                        if (storedWebhookId) {
-                            try {
-                                const webhook = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${storedWebhookId}`);
-                                // If the stored webhook exists but has a different URL, update it
-                                if (webhook && webhook.url !== webhookUrl) {
-                                    console.log('EmailConnect: Webhook URL changed, updating:', {
-                                        webhookId: storedWebhookId,
-                                        oldUrl: webhook.url,
-                                        newUrl: webhookUrl
-                                    });
-                                    // Determine if this is switching to test or production
-                                    const isTestUrl = (webhookUrl === null || webhookUrl === void 0 ? void 0 : webhookUrl.includes('/webhook-test/')) || false;
-                                    const description = `Auto-created webhook for n8n trigger node: ${this.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
-                                    // Update the webhook URL and description
-                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${storedWebhookId}`, {
-                                        url: webhookUrl,
-                                        description: description
-                                    });
-                                    console.log('EmailConnect: Successfully updated webhook URL');
-                                    // Check if webhook is already verified (n8n webhooks are auto-verified)
-                                    try {
-                                        const webhookInfo = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${storedWebhookId}`);
-                                        console.log('EmailConnect: Webhook info after update:', {
-                                            id: webhookInfo.id,
-                                            verified: webhookInfo.verified,
-                                            active: webhookInfo.active
-                                        });
-                                        if (webhookInfo.verified) {
-                                            console.log('EmailConnect: Webhook is already verified (auto-verified), skipping manual verification');
-                                        }
-                                        else {
-                                            console.log('EmailConnect: Webhook not verified, starting manual verification...');
-                                            // Add a small delay to ensure webhook URL update is processed
-                                            await new Promise(resolve => setTimeout(resolve, 1000));
-                                            // Verify the updated webhook
-                                            const verificationToken = storedWebhookId.slice(-5);
-                                            try {
-                                                console.log('EmailConnect: Starting webhook verification for webhook:', storedWebhookId);
-                                                const verifyResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify`);
-                                                console.log('EmailConnect: Verification request sent, response:', verifyResponse);
-                                                const completeResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${storedWebhookId}/verify/complete`, {
-                                                    verificationToken: verificationToken
-                                                });
-                                                console.log('EmailConnect: Verification completed, response:', completeResponse);
-                                                console.log('EmailConnect: Successfully verified updated webhook');
-                                            }
-                                            catch (verificationError) {
-                                                console.error('EmailConnect: Failed to verify updated webhook:', {
-                                                    error: verificationError,
-                                                    webhookId: storedWebhookId,
-                                                    verificationToken: verificationToken
-                                                });
-                                                // Don't fail the entire operation if verification fails
-                                            }
-                                        }
-                                    }
-                                    catch (infoError) {
-                                        console.error('EmailConnect: Failed to get webhook info, skipping verification check:', infoError);
-                                    }
-                                    // Ensure webhook-alias linkage is maintained after URL update
-                                    await ensureWebhookAliasLinkage(this, storedWebhookId);
-                                    return true; // Webhook exists and has been updated
-                                }
-                                // If URL matches, webhook exists and is current
-                                if (webhook && webhook.url === webhookUrl) {
-                                    // Ensure webhook-alias linkage is correct even if URL didn't change
-                                    await ensureWebhookAliasLinkage(this, storedWebhookId);
-                                    return true;
-                                }
-                            }
-                            catch (webhookError) {
-                                // Clear the invalid stored webhook ID
-                                delete this.getWorkflowStaticData('node').webhookId;
-                                // If the stored webhook doesn't exist anymore, fall through to create new one
-                                console.log('EmailConnect: Stored webhook not found, will create new one:', storedWebhookId);
-                                return false;
-                            }
-                        }
-                        // No stored webhook ID, check if a webhook with this URL already exists
-                        // This only runs for first-time setup or when stored webhook was invalid
                         const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
                         const webhooks = (response === null || response === void 0 ? void 0 : response.webhooks) || [];
-                        // First check for exact URL match
-                        const exactMatch = webhooks.find((webhook) => webhook.url === webhookUrl);
+                        // Exact URL match
+                        const exactMatch = webhooks.find((wh) => wh.url === webhookUrl);
                         if (exactMatch) {
-                            console.log('EmailConnect: Found exact URL match, storing webhook ID:', exactMatch.id);
-                            // Store the webhook ID for future use
                             this.getWorkflowStaticData('node').webhookId = exactMatch.id;
                             return true;
                         }
-                        // Extract UUID from current webhook URL to find matching webhooks
-                        // URL format: https://domain/webhook[-test]/UUID/emailconnect
-                        const uuidMatch = webhookUrl === null || webhookUrl === void 0 ? void 0 : webhookUrl.match(/\/webhook(?:-test)?\/([a-f0-9-]{36})\//);
+                        // UUID match (test↔prod URL variant)
+                        const uuidMatch = webhookUrl.match(/\/webhook(?:-test)?\/([a-f0-9-]{36})\//);
                         if (uuidMatch) {
                             const currentUuid = uuidMatch[1];
-                            console.log('EmailConnect: Extracted UUID from webhook URL:', currentUuid);
-                            // Find webhooks that contain the same UUID (test/production variants)
-                            const uuidMatches = webhooks.filter((webhook) => {
-                                return webhook.url && webhook.url.includes(currentUuid);
-                            });
-                            if (uuidMatches.length > 0) {
-                                const matchingWebhook = uuidMatches[0];
-                                console.log('EmailConnect: Found webhook with same UUID but different URL, updating:', {
-                                    webhookId: matchingWebhook.id,
-                                    oldUrl: matchingWebhook.url,
-                                    newUrl: webhookUrl,
-                                    uuid: currentUuid
-                                });
-                                // Store the webhook ID and update its URL
-                                this.getWorkflowStaticData('node').webhookId = matchingWebhook.id;
-                                // Update the webhook URL
-                                const isTestUrl = (webhookUrl === null || webhookUrl === void 0 ? void 0 : webhookUrl.includes('/webhook-test/')) || false;
-                                const description = `Auto-created webhook for n8n trigger node: ${this.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
-                                try {
-                                    await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${matchingWebhook.id}`, {
-                                        url: webhookUrl,
-                                        description: description
-                                    });
-                                    console.log('EmailConnect: Successfully updated webhook URL');
-                                    // Check if webhook is already verified (n8n webhooks are auto-verified)
-                                    try {
-                                        const webhookInfo = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${matchingWebhook.id}`);
-                                        console.log('EmailConnect: Webhook info after update:', {
-                                            id: webhookInfo.id,
-                                            verified: webhookInfo.verified,
-                                            active: webhookInfo.active
-                                        });
-                                        if (webhookInfo.verified) {
-                                            console.log('EmailConnect: Webhook is already verified (auto-verified), skipping manual verification');
-                                        }
-                                        else {
-                                            console.log('EmailConnect: Webhook not verified, starting manual verification...');
-                                            // Add a small delay to ensure webhook URL update is processed
-                                            await new Promise(resolve => setTimeout(resolve, 1000));
-                                            // Verify the updated webhook
-                                            const verificationToken = matchingWebhook.id.slice(-5);
-                                            try {
-                                                console.log('EmailConnect: Starting webhook verification for existing webhook:', matchingWebhook.id);
-                                                const verifyResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify`);
-                                                console.log('EmailConnect: Verification request sent, response:', verifyResponse);
-                                                const completeResponse = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', `/api/webhooks/${matchingWebhook.id}/verify/complete`, {
-                                                    verificationToken: verificationToken
-                                                });
-                                                console.log('EmailConnect: Verification completed, response:', completeResponse);
-                                                console.log('EmailConnect: Successfully verified updated webhook');
-                                            }
-                                            catch (verificationError) {
-                                                console.error('EmailConnect: Failed to verify updated webhook:', {
-                                                    error: verificationError,
-                                                    webhookId: matchingWebhook.id,
-                                                    verificationToken: verificationToken
-                                                });
-                                            }
-                                        }
-                                    }
-                                    catch (infoError) {
-                                        console.error('EmailConnect: Failed to get webhook info, skipping verification check:', infoError);
-                                    }
-                                    // Ensure webhook-alias linkage is maintained after URL update
-                                    await ensureWebhookAliasLinkage(this, matchingWebhook.id);
-                                    return true;
-                                }
-                                catch (updateError) {
-                                    console.error('EmailConnect: Failed to update webhook URL:', updateError);
-                                    // Fall through to create new webhook
-                                }
+                            const uuidHit = webhooks.find((wh) => { var _a; return (_a = wh.url) === null || _a === void 0 ? void 0 : _a.includes(currentUuid); });
+                            if (uuidHit) {
+                                this.getWorkflowStaticData('node').webhookId = uuidHit.id;
+                                await updateWebhookUrlAndVerify(this, uuidHit.id, webhookUrl);
+                                return true;
                             }
                         }
-                        console.log('EmailConnect: No matching webhooks found, will create new one');
                         return false;
                     }
-                    catch (error) {
-                        console.error('EmailConnect: Error in checkExists:', error);
+                    catch {
                         return false;
                     }
                 },
+                // ------------------------------------------------------------------
+                // create — cleaned up, dead code removed
+                // ------------------------------------------------------------------
                 async create() {
                     var _a;
                     const webhookUrl = this.getNodeWebhookUrl('default');
@@ -473,91 +306,53 @@ class EmailConnectTrigger {
                     const aliasMode = this.getNodeParameter('aliasMode');
                     let webhookName = this.getNodeParameter('webhookName');
                     const webhookDescription = this.getNodeParameter('webhookDescription');
-                    let aliasId = '';
                     try {
+                        // Fetch domain info (needed for name generation and previousWebhookId)
+                        const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+                        const previousWebhookId = domain.webhookId || '';
                         // Generate default webhook name if none provided
                         if (!webhookName || webhookName.trim() === '') {
-                            // Get domain information to construct the email address
-                            const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
                             const domainName = domain.domain;
                             if (aliasMode === 'catchall') {
                                 webhookName = `*@${domainName} endpoint trigger`;
                             }
                             else if (aliasMode === 'specific') {
                                 const aliasLocalPart = this.getNodeParameter('aliasLocalPart');
-                                if (aliasLocalPart) {
-                                    webhookName = `${aliasLocalPart}@${domainName} endpoint trigger`;
-                                }
-                                else {
-                                    webhookName = `${domainName} endpoint trigger`;
-                                }
+                                webhookName = aliasLocalPart
+                                    ? `${aliasLocalPart}@${domainName} endpoint trigger`
+                                    : `${domainName} endpoint trigger`;
                             }
                         }
-                        // Store previous webhook IDs for restoration on delete
-                        let previousWebhookId = '';
+                        // Store previous IDs for restoration on delete
                         let previousDomainWebhookId = '';
                         let previousCatchAllWebhookId = '';
-                        if (aliasId) {
-                            // Get current alias webhook for restoration
-                            try {
-                                const alias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
-                                previousWebhookId = alias.webhookId || '';
-                                // If this is a catch-all alias, also store domain webhook for restoration
-                                if (alias.email && alias.email.startsWith('*@')) {
-                                    try {
-                                        const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                                        previousDomainWebhookId = domain.webhookId || '';
-                                    }
-                                    catch (error) {
-                                        console.warn('Failed to get current domain webhook:', error);
-                                    }
-                                }
-                            }
-                            catch (error) {
-                                console.warn('Failed to get current alias webhook:', error);
+                        // Get catch-all alias webhook for restoration
+                        try {
+                            const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+                            const aliases = (response === null || response === void 0 ? void 0 : response.aliases) || [];
+                            const catchAllAlias = aliases.find((alias) => { var _a; return (_a = alias.email) === null || _a === void 0 ? void 0 : _a.startsWith('*@'); });
+                            if (catchAllAlias) {
+                                previousCatchAllWebhookId = catchAllAlias.webhookId || '';
                             }
                         }
-                        else {
-                            // Get current domain webhook for restoration
-                            try {
-                                const domain = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                                previousWebhookId = domain.webhookId || '';
-                                // Also get catch-all alias webhook for restoration
-                                try {
-                                    const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-                                    const aliases = (response === null || response === void 0 ? void 0 : response.aliases) || [];
-                                    const catchAllAlias = aliases.find((alias) => alias.email && alias.email.startsWith('*@'));
-                                    if (catchAllAlias) {
-                                        previousCatchAllWebhookId = catchAllAlias.webhookId || '';
-                                    }
-                                }
-                                catch (error) {
-                                    console.warn('Failed to get current catch-all alias webhook:', error);
-                                }
-                            }
-                            catch (error) {
-                                console.warn('Failed to get current domain webhook:', error);
-                            }
+                        catch {
+                            // non-critical
                         }
-                        let webhookId;
-                        let createdAliasId;
-                        // Use the new atomic endpoint for all modes
+                        // Use the atomic endpoint for all modes
                         const webhookAliasData = {
                             domainId,
                             webhookUrl,
                             webhookName,
                             webhookDescription,
-                            firstOrCreate: true, // Enable smart create/update logic
-                            updateWebhookData: true, // Update existing webhook data
-                            autoVerify: true, // Use auto-verification
+                            firstOrCreate: true,
+                            updateWebhookData: true,
+                            autoVerify: true,
                         };
                         if (aliasMode === 'catchall') {
-                            // Create catch-all alias with domain synchronization
                             webhookAliasData.aliasType = 'catchall';
                             webhookAliasData.syncWithDomain = true;
                         }
                         else if (aliasMode === 'specific') {
-                            // Create or update specific alias
                             const aliasLocalPart = this.getNodeParameter('aliasLocalPart');
                             if (!aliasLocalPart) {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Alias local part is required for specific alias mode');
@@ -565,49 +360,23 @@ class EmailConnectTrigger {
                             webhookAliasData.aliasType = 'specific';
                             webhookAliasData.localPart = aliasLocalPart;
                         }
-                        try {
-                            const result = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
-                            if (!result.success) {
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
-                            }
-                            webhookId = result.webhook.id;
-                            createdAliasId = result.alias.id;
-                            aliasId = createdAliasId || '';
-                            console.log('EmailConnect Trigger - Successfully created/updated webhook and alias:', {
-                                action: result.action,
-                                webhookId,
-                                aliasId: createdAliasId,
-                                aliasEmail: result.alias.email,
-                                webhookVerified: result.webhook.verified,
-                                domainSynced: (_a = result.domain) === null || _a === void 0 ? void 0 : _a.webhookUpdated,
-                                warning: result.warning
-                            });
-                            // Log user-friendly message about what happened
-                            const actionMessage = result.action === 'created' ? 'Created new' : 'Updated existing';
-                            console.log(`EmailConnect: ${actionMessage} alias ${result.alias.email} with webhook ${webhookId}`);
+                        const result = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
+                        if (!result.success) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
                         }
-                        catch (error) {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${error}`);
-                        }
+                        const webhookId = result.webhook.id;
+                        const aliasId = ((_a = result.alias) === null || _a === void 0 ? void 0 : _a.id) || '';
                         // Store configuration for cleanup later
-                        console.log('EmailConnect Trigger Create - Storing configuration for cleanup:', {
-                            domainId,
-                            aliasId,
-                            webhookId,
-                            previousWebhookId,
-                            previousDomainWebhookId,
-                            previousCatchAllWebhookId
-                        });
-                        this.getWorkflowStaticData('node').domainId = domainId;
-                        this.getWorkflowStaticData('node').aliasId = aliasId;
-                        this.getWorkflowStaticData('node').webhookId = webhookId;
-                        this.getWorkflowStaticData('node').previousWebhookId = previousWebhookId;
-                        this.getWorkflowStaticData('node').previousDomainWebhookId = previousDomainWebhookId;
-                        this.getWorkflowStaticData('node').previousCatchAllWebhookId = previousCatchAllWebhookId;
-                        this.getWorkflowStaticData('node').aliasMode = aliasMode;
+                        const staticData = this.getWorkflowStaticData('node');
+                        staticData.domainId = domainId;
+                        staticData.aliasId = aliasId;
+                        staticData.webhookId = webhookId;
+                        staticData.previousWebhookId = previousWebhookId;
+                        staticData.previousDomainWebhookId = previousDomainWebhookId;
+                        staticData.previousCatchAllWebhookId = previousCatchAllWebhookId;
+                        staticData.aliasMode = aliasMode;
                         if (aliasMode === 'specific') {
-                            const aliasLocalPart = this.getNodeParameter('aliasLocalPart');
-                            this.getWorkflowStaticData('node').aliasLocalPart = aliasLocalPart;
+                            staticData.aliasLocalPart = this.getNodeParameter('aliasLocalPart');
                         }
                         return true;
                     }
@@ -615,147 +384,129 @@ class EmailConnectTrigger {
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to configure webhook endpoint: ${error}`);
                     }
                 },
+                // ------------------------------------------------------------------
+                // delete — cleaned up logging
+                // ------------------------------------------------------------------
                 async delete() {
-                    console.log('EmailConnect Trigger Delete - Method called!');
+                    var _a, _b;
                     try {
-                        // Get stored configuration
-                        const domainId = this.getWorkflowStaticData('node').domainId;
-                        const aliasId = this.getWorkflowStaticData('node').aliasId;
-                        const webhookId = this.getWorkflowStaticData('node').webhookId;
-                        const previousWebhookId = this.getWorkflowStaticData('node').previousWebhookId;
-                        const previousDomainWebhookId = this.getWorkflowStaticData('node').previousDomainWebhookId;
-                        const previousCatchAllWebhookId = this.getWorkflowStaticData('node').previousCatchAllWebhookId;
-                        console.log('EmailConnect Trigger Delete - Starting cleanup:', {
-                            domainId,
-                            aliasId,
-                            webhookId,
-                            previousWebhookId,
-                            previousDomainWebhookId,
-                            previousCatchAllWebhookId
-                        });
+                        const staticData = this.getWorkflowStaticData('node');
+                        const domainId = staticData.domainId;
+                        const aliasId = staticData.aliasId;
+                        const webhookId = staticData.webhookId;
+                        const previousWebhookId = staticData.previousWebhookId;
+                        const previousDomainWebhookId = staticData.previousDomainWebhookId;
+                        const previousCatchAllWebhookId = staticData.previousCatchAllWebhookId;
                         if (domainId && webhookId) {
-                            // Step 1: Detach the webhook by setting to null (with synchronization)
+                            // Step 1: Detach the webhook
                             try {
                                 if (aliasId) {
-                                    console.log('Detaching webhook from alias:', aliasId);
                                     await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-                                        webhookId: null
+                                        webhookId: null,
                                     });
-                                    // If this was a catch-all alias, also detach from domain
+                                    // If catch-all, also detach from domain
                                     if (previousDomainWebhookId !== undefined) {
                                         try {
                                             const alias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
-                                            if (alias.email && alias.email.startsWith('*@')) {
-                                                console.log('Detaching webhook from domain for catch-all alias');
+                                            if ((_a = alias.email) === null || _a === void 0 ? void 0 : _a.startsWith('*@')) {
                                                 await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-                                                    webhookId: null
+                                                    webhookId: null,
                                                 });
                                             }
                                         }
-                                        catch (error) {
-                                            console.warn('Failed to detach domain webhook for catch-all alias:', error);
+                                        catch {
+                                            // non-critical
                                         }
                                     }
                                 }
                                 else {
-                                    console.log('Detaching webhook from domain:', domainId);
                                     await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-                                        webhookId: null
+                                        webhookId: null,
                                     });
-                                    // Also detach from catch-all alias if it was synchronized
+                                    // Also detach catch-all alias if synchronized
                                     if (previousCatchAllWebhookId !== undefined) {
                                         try {
                                             const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
                                             const aliases = (response === null || response === void 0 ? void 0 : response.aliases) || [];
-                                            const catchAllAlias = aliases.find((alias) => alias.email && alias.email.startsWith('*@'));
+                                            const catchAllAlias = aliases.find((a) => { var _a; return (_a = a.email) === null || _a === void 0 ? void 0 : _a.startsWith('*@'); });
                                             if (catchAllAlias) {
-                                                console.log('Detaching webhook from catch-all alias');
                                                 await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${catchAllAlias.id}/webhook`, {
-                                                    webhookId: null
+                                                    webhookId: null,
                                                 });
                                             }
                                         }
-                                        catch (error) {
-                                            console.warn('Failed to detach catch-all alias webhook:', error);
+                                        catch {
+                                            // non-critical
                                         }
                                     }
                                 }
                             }
                             catch (error) {
-                                console.warn('Failed to detach webhook:', error);
+                                console.warn('EmailConnect: failed to detach webhook:', error);
                             }
                             // Step 2: Delete the webhook
                             try {
-                                console.log('Deleting webhook:', webhookId);
                                 await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
-                                console.log('Successfully deleted webhook:', webhookId);
                             }
                             catch (error) {
-                                console.error('Failed to delete webhook:', webhookId, error);
+                                console.warn('EmailConnect: failed to delete webhook:', webhookId, error);
                             }
-                            // Step 3: Restore previous webhooks (with synchronization)
+                            // Step 3: Restore previous webhooks
                             try {
                                 if (aliasId) {
-                                    console.log('Restoring previous alias webhook:', previousWebhookId);
                                     await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-                                        webhookId: previousWebhookId || null
+                                        webhookId: previousWebhookId || null,
                                     });
-                                    // If this was a catch-all alias, also restore domain webhook
                                     if (previousDomainWebhookId !== undefined) {
                                         try {
                                             const alias = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
-                                            if (alias.email && alias.email.startsWith('*@')) {
-                                                console.log('Restoring previous domain webhook for catch-all alias:', previousDomainWebhookId);
+                                            if ((_b = alias.email) === null || _b === void 0 ? void 0 : _b.startsWith('*@')) {
                                                 await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-                                                    webhookId: previousDomainWebhookId || null
+                                                    webhookId: previousDomainWebhookId || null,
                                                 });
                                             }
                                         }
-                                        catch (error) {
-                                            console.warn('Failed to restore domain webhook for catch-all alias:', error);
+                                        catch {
+                                            // non-critical
                                         }
                                     }
                                 }
                                 else {
-                                    console.log('Restoring previous domain webhook:', previousWebhookId);
                                     await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}/webhook`, {
-                                        webhookId: previousWebhookId || null
+                                        webhookId: previousWebhookId || null,
                                     });
-                                    // Also restore catch-all alias webhook if it was synchronized
                                     if (previousCatchAllWebhookId !== undefined) {
                                         try {
                                             const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
                                             const aliases = (response === null || response === void 0 ? void 0 : response.aliases) || [];
-                                            const catchAllAlias = aliases.find((alias) => alias.email && alias.email.startsWith('*@'));
+                                            const catchAllAlias = aliases.find((a) => { var _a; return (_a = a.email) === null || _a === void 0 ? void 0 : _a.startsWith('*@'); });
                                             if (catchAllAlias) {
-                                                console.log('Restoring previous catch-all alias webhook:', previousCatchAllWebhookId);
                                                 await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${catchAllAlias.id}/webhook`, {
-                                                    webhookId: previousCatchAllWebhookId || null
+                                                    webhookId: previousCatchAllWebhookId || null,
                                                 });
                                             }
                                         }
-                                        catch (error) {
-                                            console.warn('Failed to restore catch-all alias webhook:', error);
+                                        catch {
+                                            // non-critical
                                         }
                                     }
                                 }
                             }
                             catch (error) {
-                                console.warn('Failed to restore previous webhook:', error);
+                                console.warn('EmailConnect: failed to restore previous webhook:', error);
                             }
                             // Clean up stored configuration
-                            delete this.getWorkflowStaticData('node').domainId;
-                            delete this.getWorkflowStaticData('node').aliasId;
-                            delete this.getWorkflowStaticData('node').webhookId;
-                            delete this.getWorkflowStaticData('node').previousWebhookId;
-                            delete this.getWorkflowStaticData('node').previousDomainWebhookId;
-                            delete this.getWorkflowStaticData('node').previousCatchAllWebhookId;
+                            delete staticData.domainId;
+                            delete staticData.aliasId;
+                            delete staticData.webhookId;
+                            delete staticData.previousWebhookId;
+                            delete staticData.previousDomainWebhookId;
+                            delete staticData.previousCatchAllWebhookId;
                         }
-                        console.log('EmailConnect Trigger Delete - Cleanup completed');
                         return true;
                     }
                     catch (error) {
-                        console.error('Failed to restore previous webhook configuration:', error);
+                        console.warn('EmailConnect: error during webhook cleanup:', error);
                         return true;
                     }
                 },
@@ -763,17 +514,13 @@ class EmailConnectTrigger {
         };
     }
     async webhook() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
         const bodyData = this.getBodyData();
         const events = this.getNodeParameter('events');
         const domainId = this.getNodeParameter('domainId');
-        const aliasMode = this.getNodeParameter('aliasMode');
-        let aliasId = '';
-        // For all modes, the aliasId is stored in static data after creation
-        aliasId = this.getWorkflowStaticData('node').aliasId;
+        const aliasId = this.getWorkflowStaticData('node').aliasId;
         // Always accept and process any data - return 200 with the received data
         if (!bodyData || typeof bodyData !== 'object') {
-            // Return test response for empty/invalid data
             return {
                 workflowData: [
                     [
@@ -792,15 +539,6 @@ class EmailConnectTrigger {
         const emailData = bodyData;
         // Check if this is a webhook verification payload
         if (emailData.type === 'webhook_verification') {
-            console.log('EmailConnect: Received webhook verification payload:', {
-                type: emailData.type,
-                verification_token: emailData.verification_token,
-                webhook_id: (_a = emailData.webhook) === null || _a === void 0 ? void 0 : _a.id,
-                timestamp: emailData.timestamp,
-                currentTime: new Date().toISOString()
-            });
-            // For verification payloads, return a minimal response that doesn't trigger workflow execution
-            // This prevents verification payloads from cluttering your workflow runs
             return {
                 workflowData: [
                     [
@@ -810,7 +548,7 @@ class EmailConnectTrigger {
                                 type: 'webhook_verification',
                                 message: 'Webhook verification received - this should not trigger workflow logic',
                                 verification_token: emailData.verification_token,
-                                webhook_id: (_b = emailData.webhook) === null || _b === void 0 ? void 0 : _b.id,
+                                webhook_id: (_a = emailData.webhook) === null || _a === void 0 ? void 0 : _a.id,
                                 receivedAt: new Date().toISOString(),
                                 note: 'This is an internal verification payload and should be ignored by your workflow'
                             },
@@ -819,16 +557,11 @@ class EmailConnectTrigger {
                 ],
             };
         }
-        // For any data (including EmailConnect test payloads), pass it through
-        // This ensures users can test with your UI and see the exact payload structure
         // For EmailConnect production data, apply filters
-        // But for test data or other payloads, always process them
         const isEmailConnectData = emailData.message || emailData.envelope || emailData.status;
         if (isEmailConnectData) {
-            // Check if this event type should trigger the workflow
             const eventType = emailData.status || 'email.received';
             if (!events.includes(eventType)) {
-                // Still return 200 but don't trigger workflow
                 return {
                     workflowData: [
                         [
@@ -844,7 +577,6 @@ class EmailConnectTrigger {
                     ],
                 };
             }
-            // Apply domain filter - check if email is for the configured domain
             if (domainId && emailData.domainId !== domainId) {
                 return {
                     workflowData: [
@@ -861,7 +593,6 @@ class EmailConnectTrigger {
                     ],
                 };
             }
-            // Apply alias filter if specified - check if email is for the configured alias
             if (aliasId && emailData.aliasId !== aliasId) {
                 return {
                     workflowData: [
@@ -878,10 +609,6 @@ class EmailConnectTrigger {
                     ],
                 };
             }
-        }
-        // Process the data - handle both EmailConnect format and test payloads
-        if (isEmailConnectData) {
-            // Process EmailConnect data with proper structure
             const processedData = {
                 id: emailData.id,
                 domainId: emailData.domainId,
@@ -892,14 +619,11 @@ class EmailConnectTrigger {
                 status: emailData.status,
                 payload: emailData.payload,
                 errorMessage: emailData.errorMessage,
-                // Additional structured data if available
-                headers: ((_c = emailData.payload) === null || _c === void 0 ? void 0 : _c.headers) || ((_d = emailData.envelope) === null || _d === void 0 ? void 0 : _d.headers) || {},
-                textContent: ((_e = emailData.payload) === null || _e === void 0 ? void 0 : _e.text) || ((_g = (_f = emailData.message) === null || _f === void 0 ? void 0 : _f.content) === null || _g === void 0 ? void 0 : _g.text) || '',
-                htmlContent: ((_h = emailData.payload) === null || _h === void 0 ? void 0 : _h.html) || ((_k = (_j = emailData.message) === null || _j === void 0 ? void 0 : _j.content) === null || _k === void 0 ? void 0 : _k.html) || '',
-                attachments: ((_l = emailData.payload) === null || _l === void 0 ? void 0 : _l.attachments) || ((_m = emailData.message) === null || _m === void 0 ? void 0 : _m.attachments) || [],
-                // Envelope data if included
-                envelope: ((_o = emailData.payload) === null || _o === void 0 ? void 0 : _o.envelope) || emailData.envelope || {},
-                // Include original message structure for test payloads
+                headers: ((_b = emailData.payload) === null || _b === void 0 ? void 0 : _b.headers) || ((_c = emailData.envelope) === null || _c === void 0 ? void 0 : _c.headers) || {},
+                textContent: ((_d = emailData.payload) === null || _d === void 0 ? void 0 : _d.text) || ((_f = (_e = emailData.message) === null || _e === void 0 ? void 0 : _e.content) === null || _f === void 0 ? void 0 : _f.text) || '',
+                htmlContent: ((_g = emailData.payload) === null || _g === void 0 ? void 0 : _g.html) || ((_j = (_h = emailData.message) === null || _h === void 0 ? void 0 : _h.content) === null || _j === void 0 ? void 0 : _j.html) || '',
+                attachments: ((_k = emailData.payload) === null || _k === void 0 ? void 0 : _k.attachments) || ((_l = emailData.message) === null || _l === void 0 ? void 0 : _l.attachments) || [],
+                envelope: ((_m = emailData.payload) === null || _m === void 0 ? void 0 : _m.envelope) || emailData.envelope || {},
                 message: emailData.message,
             };
             return {
@@ -913,7 +637,6 @@ class EmailConnectTrigger {
             };
         }
         else {
-            // For any other data (test payloads, manual tests), pass through as-is
             return {
                 workflowData: [
                     [

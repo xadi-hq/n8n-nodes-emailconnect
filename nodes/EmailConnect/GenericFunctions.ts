@@ -5,8 +5,11 @@ import {
 	IWebhookFunctions,
 	IHttpRequestOptions,
 	IHttpRequestMethods,
+	INodePropertyOptions,
 	NodeApiError,
 } from 'n8n-workflow';
+
+export const API_BASE_URL = 'https://app.emailconnect.eu';
 
 export async function emailConnectApiRequest(
 	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
@@ -30,42 +33,47 @@ export async function emailConnectApiRequest(
 		},
 		...(hasBody && { body }),
 		qs,
-		url: uri || `https://app.emailconnect.eu${resource}`,
+		url: uri || `${API_BASE_URL}${resource}`,
 		json: true,
 	};
 
-	// Debug logging
-	console.log('EmailConnect API Request:', {
-		method,
-		url: options.url,
-		hasApiKey: !!credentials.apiKey,
-		apiKeyPrefix: credentials.apiKey ? `${String(credentials.apiKey).substring(0, 8)}...` : 'NONE',
-		headers: { ...options.headers, 'X-API-KEY': credentials.apiKey ? '[REDACTED]' : 'NONE' },
-		body: hasBody ? body : 'EMPTY',
-		qs: Object.keys(qs).length > 0 ? qs : 'EMPTY'
-	});
-
 	try {
-
-		const response = await this.helpers.httpRequest(options);
-
-		// Debug logging for response
-		console.log('EmailConnect API Response:', {
-			url: options.url,
-			responseType: typeof response,
-			isArray: Array.isArray(response),
-			responseLength: Array.isArray(response) ? response.length : 'N/A',
-			response: response
-		});
-
-		return response;
+		return await this.helpers.httpRequest(options);
 	} catch (error) {
-		console.error('EmailConnect API Error:', {
-			url: options.url,
-			error: error,
-			errorMessage: error instanceof Error ? error.message : String(error),
-			errorStack: error instanceof Error ? error.stack : 'No stack trace'
-		});
+		console.error(`EmailConnect API error: ${method} ${resource}`, error instanceof Error ? error.message : error);
 		throw new NodeApiError(this.getNode(), error as any);
+	}
+}
+
+export async function getDomainOptions(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+	try {
+		const response = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
+		const domains = response?.domains;
+		if (!Array.isArray(domains)) return [];
+
+		return domains.map((domain: any) => ({
+			name: `${domain.domain} (${domain.id})`,
+			value: domain.id,
+		}));
+	} catch {
+		return [];
+	}
+}
+
+export async function getAliasOptions(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+	try {
+		const domainId = this.getCurrentNodeParameter('domainId') as string;
+		if (!domainId) return [];
+
+		const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
+		const aliases = response?.aliases;
+		if (!Array.isArray(aliases)) return [];
+
+		return aliases.map((alias: any) => ({
+			name: `${alias.email} (${alias.id})`,
+			value: alias.id,
+		}));
+	} catch {
+		return [];
 	}
 }

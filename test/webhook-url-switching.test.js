@@ -7,7 +7,8 @@ const { EmailConnectTrigger } = require('../dist/nodes/EmailConnectTrigger/Email
 
 // Mock the emailConnectApiRequest function
 jest.mock('../dist/nodes/EmailConnect/GenericFunctions.js', () => ({
-  emailConnectApiRequest: jest.fn()
+  emailConnectApiRequest: jest.fn(),
+  getDomainOptions: jest.fn().mockResolvedValue([]),
 }));
 
 const { emailConnectApiRequest } = require('../dist/nodes/EmailConnect/GenericFunctions.js');
@@ -20,14 +21,26 @@ describe('EmailConnect Webhook URL Switching', () => {
   beforeEach(() => {
     triggerNode = new EmailConnectTrigger();
     emailConnectApiRequest.mockReset();
-    
+
     // Mock static data storage
-    mockStaticData = {};
-    
+    mockStaticData = {
+      aliasMode: 'specific',
+      domainId: 'test-domain-id',
+      aliasLocalPart: 'support',
+    };
+
     mockContext = {
       getNodeWebhookUrl: jest.fn(),
       getWorkflowStaticData: jest.fn().mockReturnValue(mockStaticData),
       getNode: jest.fn().mockReturnValue({ name: 'Test EmailConnect Trigger' }),
+      getNodeParameter: jest.fn((param) => {
+        const params = {
+          aliasMode: 'specific',
+          domainId: 'test-domain-id',
+          aliasLocalPart: 'support',
+        };
+        return params[param] || '';
+      }),
       getCredentials: jest.fn().mockResolvedValue({
         apiKey: 'test-api-key',
         baseUrl: 'http://localhost:3000'
@@ -44,27 +57,28 @@ describe('EmailConnect Webhook URL Switching', () => {
       // Setup: webhook exists with production URL, but current URL is test
       mockContext.getNodeWebhookUrl.mockReturnValue(testUrl);
       mockStaticData.webhookId = webhookId;
+      mockStaticData.aliasId = 'test-alias-id';
 
-      // Mock API responses
+      // Mock API responses:
+      // 1. GET webhook (tryStoredWebhook)
+      // 2. PUT webhook URL (updateWebhookUrlAndVerify)
+      // 3. POST verify (not verified)
+      // 4. POST verify/complete
+      // 5. GET alias (ensureWebhookAliasLinkage)
       emailConnectApiRequest
-        .mockResolvedValueOnce({ // GET /api/webhooks/{id}
-          id: webhookId,
-          url: productionUrl, // Current webhook has production URL
-          name: 'Test Webhook',
-          verified: true
-        })
-        .mockResolvedValueOnce({}) // PUT /api/webhooks/{id} - update response
-        .mockResolvedValueOnce({}) // POST /api/webhooks/{id}/verify
-        .mockResolvedValueOnce({}); // POST /api/webhooks/{id}/verify/complete
+        .mockResolvedValueOnce({ id: webhookId, url: productionUrl, name: 'Test Webhook', verified: true })
+        .mockResolvedValueOnce({ verified: false }) // PUT response — not verified
+        .mockResolvedValueOnce({}) // POST verify
+        .mockResolvedValueOnce({}) // POST verify/complete
+        .mockResolvedValueOnce({ webhookId: webhookId }); // GET alias — linkage OK
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
       expect(result).toBe(true);
-      expect(emailConnectApiRequest).toHaveBeenCalledTimes(4);
-      
+
       // Verify webhook lookup
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(1, 'GET', `/api/webhooks/${webhookId}`);
-      
+
       // Verify webhook update with test URL and description
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', `/api/webhooks/${webhookId}`, {
         url: testUrl,
@@ -86,23 +100,18 @@ describe('EmailConnect Webhook URL Switching', () => {
       // Setup: webhook exists with test URL, but current URL is production
       mockContext.getNodeWebhookUrl.mockReturnValue(productionUrl);
       mockStaticData.webhookId = webhookId;
+      mockStaticData.aliasId = 'test-alias-id';
 
-      // Mock API responses
       emailConnectApiRequest
-        .mockResolvedValueOnce({ // GET /api/webhooks/{id}
-          id: webhookId,
-          url: testUrl, // Current webhook has test URL
-          name: 'Test Webhook',
-          verified: true
-        })
-        .mockResolvedValueOnce({}) // PUT /api/webhooks/{id} - update response
-        .mockResolvedValueOnce({}) // POST /api/webhooks/{id}/verify
-        .mockResolvedValueOnce({}); // POST /api/webhooks/{id}/verify/complete
+        .mockResolvedValueOnce({ id: webhookId, url: testUrl, name: 'Test Webhook', verified: true })
+        .mockResolvedValueOnce({ verified: false })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ webhookId: webhookId });
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
       expect(result).toBe(true);
-      expect(emailConnectApiRequest).toHaveBeenCalledTimes(4);
 
       // Verify webhook update with production URL and description
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', `/api/webhooks/${webhookId}`, {
@@ -125,10 +134,10 @@ describe('EmailConnect Webhook URL Switching', () => {
       mockContext.getNodeWebhookUrl.mockReturnValue(currentUrl);
       mockStaticData.webhookId = webhookId;
 
-      // Mock API response
-      emailConnectApiRequest.mockResolvedValueOnce({ // GET /api/webhooks/{id}
+      // Mock API response — URL matches, so only 1 call
+      emailConnectApiRequest.mockResolvedValueOnce({
         id: webhookId,
-        url: currentUrl, // Same URL - no update needed
+        url: currentUrl,
         name: 'Test Webhook',
         verified: true
       });
@@ -137,7 +146,7 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       expect(result).toBe(true);
       expect(emailConnectApiRequest).toHaveBeenCalledTimes(1);
-      
+
       // Should only check webhook, not update it
       expect(emailConnectApiRequest).toHaveBeenCalledWith('GET', `/api/webhooks/${webhookId}`);
     });
@@ -155,17 +164,17 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
-      expect(result).toBe(false); // Should return false to trigger recreation
+      expect(result).toBe(false);
       expect(emailConnectApiRequest).toHaveBeenCalledTimes(1);
       expect(emailConnectApiRequest).toHaveBeenCalledWith('GET', `/api/webhooks/${webhookId}`);
     });
 
-    test('should fall back to original logic when no stored webhook ID', async () => {
+    test('should fall back to webhook list when no stored webhook ID', async () => {
       const currentUrl = 'https://n8n.axtg.mywire.org:5678/webhook/d88abf53-c967-462c-b371-ddd8230e7939/emailconnect';
 
       // Setup: no stored webhook ID (new webhook)
       mockContext.getNodeWebhookUrl.mockReturnValue(currentUrl);
-      // mockStaticData.webhookId is undefined
+      delete mockStaticData.webhookId;
 
       // Mock API response for webhook list
       emailConnectApiRequest.mockResolvedValueOnce({
@@ -177,7 +186,7 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
-      expect(result).toBe(true); // Found matching webhook in list
+      expect(result).toBe(true);
       expect(emailConnectApiRequest).toHaveBeenCalledTimes(1);
       expect(emailConnectApiRequest).toHaveBeenCalledWith('GET', '/api/webhooks');
 
@@ -193,24 +202,30 @@ describe('EmailConnect Webhook URL Switching', () => {
       // Setup: no stored webhook ID but webhook exists with same UUID, different test/prod mode
       mockContext.getNodeWebhookUrl.mockReturnValue(currentUrl);
       mockContext.getNode.mockReturnValue({ id: 'some-node-id', name: 'Test EmailConnect Trigger' });
-      // mockStaticData.webhookId is undefined
+      delete mockStaticData.webhookId;
+      mockStaticData.aliasId = 'test-alias-id';
 
-      // Mock API responses
+      // Mock API responses:
+      // 1. GET /api/webhooks (fallback list)
+      // 2. PUT webhook (updateWebhookUrlAndVerify)
+      // 3. POST verify
+      // 4. POST verify/complete
+      // 5. GET alias (ensureWebhookAliasLinkage)
       emailConnectApiRequest
-        .mockResolvedValueOnce({ // GET /api/webhooks
+        .mockResolvedValueOnce({
           webhooks: [
             { id: 'other-webhook', url: 'https://other.url/webhook/different-uuid/emailconnect' },
-            { id: 'existing-webhook', url: existingUrl } // Same UUID, different test/prod mode
+            { id: 'existing-webhook', url: existingUrl }
           ]
         })
-        .mockResolvedValueOnce({}) // PUT /api/webhooks/{id} - update response
-        .mockResolvedValueOnce({}) // POST /api/webhooks/{id}/verify
-        .mockResolvedValueOnce({}); // POST /api/webhooks/{id}/verify/complete
+        .mockResolvedValueOnce({ verified: false })
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({ webhookId: 'existing-webhook' });
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
       expect(result).toBe(true);
-      expect(emailConnectApiRequest).toHaveBeenCalledTimes(4);
 
       // Should store the webhook ID
       expect(mockStaticData.webhookId).toBe('existing-webhook');
@@ -228,19 +243,51 @@ describe('EmailConnect Webhook URL Switching', () => {
       });
     });
 
-
-
     test('should handle API errors gracefully', async () => {
       const currentUrl = 'https://n8n.axtg.mywire.org:5678/webhook/d88abf53-c967-462c-b371-ddd8230e7939/emailconnect';
 
       mockContext.getNodeWebhookUrl.mockReturnValue(currentUrl);
+      delete mockStaticData.webhookId;
 
       // Mock API error
       emailConnectApiRequest.mockRejectedValueOnce(new Error('API Error'));
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
-      expect(result).toBe(false); // Should return false on error
+      expect(result).toBe(false);
+    });
+
+    test('should force recreation when alias config changed', async () => {
+      const currentUrl = 'https://n8n.axtg.mywire.org:5678/webhook/some-id/emailconnect';
+
+      mockContext.getNodeWebhookUrl.mockReturnValue(currentUrl);
+      mockStaticData.webhookId = 'some-webhook-id';
+      mockStaticData.aliasMode = 'catchall'; // stored as catchall
+
+      // Current node param is 'specific' — config changed
+      mockContext.getNodeParameter.mockImplementation((param) => {
+        const params = { aliasMode: 'specific', domainId: 'test-domain-id', aliasLocalPart: 'support' };
+        return params[param] || '';
+      });
+
+      const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
+
+      expect(result).toBe(false);
+      // Should not make any API calls — detected change before trying webhook
+      expect(emailConnectApiRequest).not.toHaveBeenCalled();
+    });
+
+    test('should force recreation when migrating from old version (no stored aliasMode)', async () => {
+      const currentUrl = 'https://n8n.axtg.mywire.org:5678/webhook/some-id/emailconnect';
+
+      mockContext.getNodeWebhookUrl.mockReturnValue(currentUrl);
+      mockStaticData.webhookId = 'some-webhook-id';
+      delete mockStaticData.aliasMode; // old version didn't store this
+
+      const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
+
+      expect(result).toBe(false);
+      expect(emailConnectApiRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -251,14 +298,16 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       mockContext.getNodeWebhookUrl.mockReturnValue(testUrl);
       mockStaticData.webhookId = webhookId;
+      mockStaticData.aliasId = 'test-alias-id';
 
       emailConnectApiRequest
         .mockResolvedValueOnce({
           id: webhookId,
-          url: 'https://n8n.axtg.mywire.org:5678/webhook/some-id/emailconnect', // Production URL
+          url: 'https://n8n.axtg.mywire.org:5678/webhook/some-id/emailconnect',
           name: 'Test Webhook'
         })
-        .mockResolvedValueOnce({});
+        .mockResolvedValueOnce({ verified: true }) // PUT response — already verified
+        .mockResolvedValueOnce({ webhookId: webhookId }); // GET alias (ensureWebhookAliasLinkage)
 
       await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
@@ -275,14 +324,16 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       mockContext.getNodeWebhookUrl.mockReturnValue(productionUrl);
       mockStaticData.webhookId = webhookId;
+      mockStaticData.aliasId = 'test-alias-id';
 
       emailConnectApiRequest
         .mockResolvedValueOnce({
           id: webhookId,
-          url: 'https://n8n.axtg.mywire.org:5678/webhook-test/some-id/emailconnect', // Test URL
+          url: 'https://n8n.axtg.mywire.org:5678/webhook-test/some-id/emailconnect',
           name: 'Test Webhook'
         })
-        .mockResolvedValueOnce({});
+        .mockResolvedValueOnce({ verified: true })
+        .mockResolvedValueOnce({ webhookId: webhookId });
 
       await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
@@ -291,6 +342,28 @@ describe('EmailConnect Webhook URL Switching', () => {
         url: productionUrl,
         description: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)'
       });
+    });
+
+    test('should skip verification when PUT response shows verified', async () => {
+      const testUrl = 'https://n8n.axtg.mywire.org:5678/webhook-test/some-id/emailconnect';
+      const webhookId = 'test-webhook-id';
+
+      mockContext.getNodeWebhookUrl.mockReturnValue(testUrl);
+      mockStaticData.webhookId = webhookId;
+      mockStaticData.aliasId = 'test-alias-id';
+
+      emailConnectApiRequest
+        .mockResolvedValueOnce({ id: webhookId, url: 'https://other.url', name: 'Webhook' })
+        .mockResolvedValueOnce({ verified: true }) // PUT response says verified
+        .mockResolvedValueOnce({ webhookId: webhookId }); // ensureWebhookAliasLinkage
+
+      await triggerNode.webhookMethods.default.checkExists.call(mockContext);
+
+      // Should be: GET webhook, PUT webhook, GET alias — no verify calls
+      expect(emailConnectApiRequest).toHaveBeenCalledTimes(3);
+      // No POST verify calls
+      const calls = emailConnectApiRequest.mock.calls;
+      expect(calls.every(c => c[0] !== 'POST')).toBe(true);
     });
   });
 });

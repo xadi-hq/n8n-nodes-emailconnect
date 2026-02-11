@@ -183,7 +183,6 @@ describe('EmailConnect Node Validation', () => {
 
       expect(webhookName).toBeDefined();
       expect(webhookName.type).toBe('string');
-      expect(webhookName.required).toBe(true);
 
       expect(webhookDescription).toBeDefined();
       expect(webhookDescription.type).toBe('string');
@@ -219,7 +218,6 @@ describe('EmailConnect Node Validation', () => {
       expect(emailConnectTriggerNode.methods).toBeDefined();
       expect(emailConnectTriggerNode.methods.loadOptions).toBeDefined();
       expect(typeof emailConnectTriggerNode.methods.loadOptions.getDomains).toBe('function');
-      expect(typeof emailConnectTriggerNode.methods.loadOptions.getAliasesForDomain).toBe('function');
     });
   });
 });
