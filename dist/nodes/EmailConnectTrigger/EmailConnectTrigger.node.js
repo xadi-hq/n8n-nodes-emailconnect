@@ -25,7 +25,7 @@ async function updateWebhookUrlAndVerify(context, webhookId, webhookUrl) {
             });
         }
         catch (verificationError) {
-            console.warn('EmailConnect: webhook verification failed after URL update:', webhookId);
+            context.logger.warn(`EmailConnect: webhook verification failed after URL update: ${webhookId}`);
         }
     }
     await ensureWebhookAliasLinkage(context, webhookId);
@@ -118,7 +118,7 @@ async function ensureWebhookAliasLinkage(context, webhookId) {
         }
     }
     catch (error) {
-        console.warn('EmailConnect: failed to ensure webhook-alias linkage:', error);
+        context.logger.warn(`EmailConnect: failed to ensure webhook-alias linkage: ${error}`);
     }
 }
 // ===========================================================================
@@ -167,17 +167,17 @@ class EmailConnectTrigger {
                     type: 'multiOptions',
                     options: [
                         {
-                            name: 'Email received',
+                            name: 'Email Received',
                             value: 'email.received',
                             description: 'Triggers when an email is received and processed',
                         },
                         {
-                            name: 'Email processed',
+                            name: 'Email Processed',
                             value: 'email.processed',
                             description: 'Triggers when an email has been successfully processed',
                         },
                         {
-                            name: 'Email failed',
+                            name: 'Email Failed',
                             value: 'email.failed',
                             description: 'Triggers when email processing fails',
                         },
@@ -186,7 +186,7 @@ class EmailConnectTrigger {
                     description: 'The events to listen for',
                 },
                 {
-                    displayName: 'Domain name or ID',
+                    displayName: 'Domain Name or ID',
                     name: 'domainId',
                     type: 'options',
                     typeOptions: {
@@ -198,17 +198,17 @@ class EmailConnectTrigger {
                     description: 'Select the domain to configure for this trigger. The domain\'s webhook endpoint will be automatically updated to point to this n8n workflow. <strong>Note:</strong> Domain must be verified in your EmailConnect account first. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
                 {
-                    displayName: 'Alias configuration',
+                    displayName: 'Alias Configuration',
                     name: 'aliasMode',
                     type: 'options',
                     options: [
                         {
-                            name: 'Use domain catch-all',
+                            name: 'Use Domain Catch-All',
                             value: 'catchall',
                             description: 'Route ALL emails to this domain through this workflow (*@yourdomain.com)',
                         },
                         {
-                            name: 'Use specific alias',
+                            name: 'Use Specific Alias',
                             value: 'specific',
                             description: 'Route specific email address to this webhook (will create if doesn\'t exist, update if exists)',
                         },
@@ -232,7 +232,7 @@ class EmailConnectTrigger {
                     description: 'The local part of the email address (before @). For example, "support" creates support@yourdomain.com. If the alias already exists, its webhook will be updated. If it doesn\'t exist, a new alias will be created.',
                 },
                 {
-                    displayName: 'Webhook name',
+                    displayName: 'Webhook Name',
                     name: 'webhookName',
                     type: 'string',
                     default: '',
@@ -240,7 +240,7 @@ class EmailConnectTrigger {
                     description: 'A descriptive name for this webhook configuration. If left empty, will default to the email address + "endpoint trigger".',
                 },
                 {
-                    displayName: 'Webhook description',
+                    displayName: 'Webhook Description',
                     name: 'webhookDescription',
                     type: 'string',
                     default: '',
@@ -254,7 +254,6 @@ class EmailConnectTrigger {
                 getDomains: GenericFunctions_1.getDomainOptions,
             },
         };
-        // @ts-ignore (because of request)
         this.webhookMethods = {
             default: {
                 // ------------------------------------------------------------------
@@ -442,14 +441,14 @@ class EmailConnectTrigger {
                                 }
                             }
                             catch (error) {
-                                console.warn('EmailConnect: failed to detach webhook:', error);
+                                this.logger.warn(`EmailConnect: failed to detach webhook: ${error}`);
                             }
                             // Step 2: Delete the webhook
                             try {
                                 await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
                             }
                             catch (error) {
-                                console.warn('EmailConnect: failed to delete webhook:', webhookId, error);
+                                this.logger.warn(`EmailConnect: failed to delete webhook ${webhookId}: ${error}`);
                             }
                             // Step 3: Restore previous webhooks
                             try {
@@ -493,7 +492,7 @@ class EmailConnectTrigger {
                                 }
                             }
                             catch (error) {
-                                console.warn('EmailConnect: failed to restore previous webhook:', error);
+                                this.logger.warn(`EmailConnect: failed to restore previous webhook: ${error}`);
                             }
                             // Clean up stored configuration
                             delete staticData.domainId;
@@ -506,7 +505,7 @@ class EmailConnectTrigger {
                         return true;
                     }
                     catch (error) {
-                        console.warn('EmailConnect: error during webhook cleanup:', error);
+                        this.logger.warn(`EmailConnect: error during webhook cleanup: ${error}`);
                         return true;
                     }
                 },

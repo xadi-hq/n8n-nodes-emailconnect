@@ -8,7 +8,7 @@ import {
 export class EmailConnectApi implements ICredentialType {
 	name = 'emailConnectApi';
 	displayName = 'EmailConnect API';
-	documentationUrl = 'https://emailconnect.eu/docs';
+	documentationUrl = 'https://emailconnect.eu/docs/';
 	properties: INodeProperties[] = [
 		{
 			displayName: 'Need an API Key?',

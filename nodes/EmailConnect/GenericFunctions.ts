@@ -40,7 +40,6 @@ export async function emailConnectApiRequest(
 	try {
 		return await this.helpers.httpRequest(options);
 	} catch (error) {
-		console.error(`EmailConnect API error: ${method} ${resource}`, error instanceof Error ? error.message : error);
 		throw new NodeApiError(this.getNode(), error as any);
 	}
 }

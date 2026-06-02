@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-emailconnect",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "n8n community node for EmailConnect - Email automation and webhook integration",
   "keywords": [
     "n8n-community-node-package",
@@ -29,11 +29,11 @@
     "node": ">=20.0.0",
     "npm": ">=8.0.0"
   },
-  "main": "index.js",
   "scripts": {
     "build": "tsc && gulp build:icons",
     "dev": "tsc --watch",
     "format": "prettier nodes credentials --write",
+    "format:check": "prettier nodes credentials --check",
     "lint": "eslint nodes credentials",
     "lintfix": "eslint nodes credentials --fix",
     "test": "jest",
@@ -54,20 +54,23 @@
     ]
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.1",
-    "@eslint/js": "^9.29.0",
-    "@typescript-eslint/parser": "^8.34.1",
-    "axios": "^1.10.0",
-    "eslint": "^9.29.0",
-    "eslint-plugin-n8n-nodes-base": "^1.16.1",
-    "globals": "^16.2.0",
+    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/js": "^9.39.4",
+    "@typescript-eslint/parser": "^8.60.1",
+    "axios": "^1.16.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-n8n-nodes-base": "^1.16.6",
+    "globals": "^16.5.0",
     "gulp": "^5.0.1",
-    "jest": "^30.0.2",
-    "n8n-workflow": "^1.2.0",
-    "prettier": "^3.3.2",
-    "typescript": "^5.5.3"
+    "jest": "^30.4.2",
+    "n8n-workflow": "^1.120.14",
+    "prettier": "^3.8.3",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "n8n-workflow": "*"
+  },
+  "overrides": {
+    "form-data": "^4.0.4"
   }
 }

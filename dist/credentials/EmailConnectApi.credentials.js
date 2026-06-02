@@ -5,7 +5,7 @@ class EmailConnectApi {
     constructor() {
         this.name = 'emailConnectApi';
         this.displayName = 'EmailConnect API';
-        this.documentationUrl = 'https://emailconnect.eu/docs';
+        this.documentationUrl = 'https://emailconnect.eu/docs/';
         this.properties = [
             {
                 displayName: 'Need an API Key?',

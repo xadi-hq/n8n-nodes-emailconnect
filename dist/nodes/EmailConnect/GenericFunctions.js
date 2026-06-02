@@ -25,7 +25,6 @@ async function emailConnectApiRequest(method, resource, body = {}, qs = {}, uri,
         return await this.helpers.httpRequest(options);
     }
     catch (error) {
-        console.error(`EmailConnect API error: ${method} ${resource}`, error instanceof Error ? error.message : error);
         throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
     }
 }
