@@ -1,4 +1,5 @@
 import {
+	IDataObject,
 	IHookFunctions,
 	INodeType,
 	INodeTypeDescription,
@@ -11,37 +12,67 @@ import {
 import { emailConnectApiRequest, getDomainOptions } from '../EmailConnect/GenericFunctions';
 
 // ---------------------------------------------------------------------------
-// Helper: update a webhook's URL + description, verify if needed, then
-// ensure the alias/domain linkage is still intact.
-// Uses PUT response `verified` field to skip redundant GET.
+// Helper: build the body for the atomic POST /api/webhooks/alias upsert.
+// Shared by create() and the URL-change path so both use the one mechanism
+// that reliably (re)verifies the webhook server-side (autoVerify).
+// ---------------------------------------------------------------------------
+function buildWebhookAliasBody(
+	context: IHookFunctions,
+	webhookUrl: string | undefined,
+	webhookName: string,
+	webhookDescription: string,
+): IDataObject {
+	const aliasMode = context.getNodeParameter('aliasMode') as string;
+
+	const body: IDataObject = {
+		domainId: context.getNodeParameter('domainId') as string,
+		webhookUrl,
+		webhookName,
+		webhookDescription,
+		firstOrCreate: true,
+		updateWebhookData: true,
+		autoVerify: true,
+	};
+
+	if (aliasMode === 'catchall') {
+		body.aliasType = 'catchall';
+		body.syncWithDomain = true;
+	} else {
+		const localPart = context.getNodeParameter('aliasLocalPart') as string;
+		if (!localPart) {
+			throw new NodeOperationError(context.getNode(), 'Alias local part is required for specific alias mode');
+		}
+		body.aliasType = 'specific';
+		body.localPart = localPart;
+	}
+
+	return body;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: the webhook URL changed (e.g. n8n test↔production). Re-run the
+// atomic upsert so the URL is updated AND re-verified in one call.
+//
+// A plain PUT /api/webhooks/{id} resets `verified` to false for any non-test
+// URL, and the standalone /verify flow uses a server-generated token the node
+// cannot reproduce — so autoVerify via /api/webhooks/alias is the only path
+// that keeps the production webhook verified.
 // ---------------------------------------------------------------------------
 async function updateWebhookUrlAndVerify(
 	context: IHookFunctions,
-	webhookId: string,
 	webhookUrl: string,
 ): Promise<void> {
-	const isTestUrl = webhookUrl.includes('/webhook-test/');
-	const description = `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
+	const staticData = context.getWorkflowStaticData('node');
+	const isTestUrl = (webhookUrl ?? '').includes('/webhook-test/');
+	const webhookName = (staticData.webhookName as string)
+		|| `n8n trigger (${context.getNode().name})`;
+	const webhookDescription = `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
 
-	const putResponse = await emailConnectApiRequest.call(context, 'PUT', `/api/webhooks/${webhookId}`, {
-		url: webhookUrl,
-		description,
-	});
+	const body = buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescription);
+	const result = await emailConnectApiRequest.call(context, 'POST', '/api/webhooks/alias', body);
 
-	// Use PUT response to decide if manual verification is needed
-	if (!putResponse?.verified) {
-		const verificationToken = webhookId.slice(-5);
-		try {
-			await emailConnectApiRequest.call(context, 'POST', `/api/webhooks/${webhookId}/verify`);
-			await emailConnectApiRequest.call(context, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
-				verificationToken,
-			});
-		} catch (verificationError) {
-			context.logger.warn(`EmailConnect: webhook verification failed after URL update: ${webhookId}`);
-		}
-	}
-
-	await ensureWebhookAliasLinkage(context, webhookId);
+	if (result?.webhook?.id) staticData.webhookId = result.webhook.id;
+	if (result?.alias?.id) staticData.aliasId = result.alias.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,48 +134,18 @@ async function tryStoredWebhook(
 		const webhook = await emailConnectApiRequest.call(context, 'GET', `/api/webhooks/${storedWebhookId}`);
 
 		if (webhook.url !== webhookUrl) {
-			// URL changed (e.g. test↔prod) — update & verify
-			await updateWebhookUrlAndVerify(context, storedWebhookId, webhookUrl);
+			// URL changed (e.g. test↔prod) — re-upsert to update URL & re-verify
+			await updateWebhookUrlAndVerify(context, webhookUrl);
 			return true;
 		}
 
-		// URL matches — nothing changed, skip ensureWebhookAliasLinkage
+		// URL matches — nothing changed
 		return true;
 	} catch {
 		// Stored webhook no longer exists
 		delete staticData.webhookId;
 		delete staticData.aliasId;
 		return false;
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Helper: ensure webhook-alias linkage is maintained.
-// Only called after actual URL changes to prevent orphaned webhooks.
-// ---------------------------------------------------------------------------
-async function ensureWebhookAliasLinkage(context: IHookFunctions, webhookId: string): Promise<void> {
-	try {
-		const domainId = context.getNodeParameter('domainId') as string;
-		const aliasMode = context.getNodeParameter('aliasMode') as string;
-		const aliasId = context.getWorkflowStaticData('node').aliasId as string;
-
-		if (aliasId) {
-			const alias = await emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
-			if (alias.webhookId !== webhookId) {
-				await emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}/webhook`, {
-					webhookId,
-				});
-			}
-		} else if (aliasMode === 'catchall') {
-			const domain = await emailConnectApiRequest.call(context, 'GET', `/api/domains/${domainId}`);
-			if (domain.webhookId !== webhookId) {
-				await emailConnectApiRequest.call(context, 'PUT', `/api/domains/${domainId}/webhook`, {
-					webhookId,
-				});
-			}
-		}
-	} catch (error) {
-		context.logger.warn(`EmailConnect: failed to ensure webhook-alias linkage: ${error}`);
 	}
 }
 
@@ -187,30 +188,6 @@ export class EmailConnectTrigger implements INodeType {
 					theme: 'info'
 				},
 				description: '<strong>🇪🇺 100% EU-operated email service</strong>• Multi-alias support for organized email routing• Free to start: 50 emails per month• Enterprise-grade security and compliance<strong>Quick Setup:</strong>1. <a href="https://app.emailconnect.eu/login" target="_blank">Start today →</a>2. <a href="https://app.emailconnect.eu/settings/api-keys" target="_blank">Get your API key →</a>3. Configure your domain and aliases below',
-			},
-			{
-				displayName: 'Events',
-				name: 'events',
-				type: 'multiOptions',
-				options: [
-					{
-						name: 'Email Received',
-						value: 'email.received',
-						description: 'Triggers when an email is received and processed',
-					},
-					{
-						name: 'Email Processed',
-						value: 'email.processed',
-						description: 'Triggers when an email has been successfully processed',
-					},
-					{
-						name: 'Email Failed',
-						value: 'email.failed',
-						description: 'Triggers when email processing fails',
-					},
-				],
-				default: ['email.received'],
-				description: 'The events to listen for',
 			},
 			{
 				displayName: 'Domain Name or ID',
@@ -318,7 +295,7 @@ export class EmailConnectTrigger implements INodeType {
 						const uuidHit = webhooks.find((wh: any) => wh.url?.includes(currentUuid));
 						if (uuidHit) {
 							this.getWorkflowStaticData('node').webhookId = uuidHit.id;
-							await updateWebhookUrlAndVerify(this, uuidHit.id, webhookUrl);
+							await updateWebhookUrlAndVerify(this, webhookUrl);
 							return true;
 						}
 					}
@@ -340,17 +317,32 @@ export class EmailConnectTrigger implements INodeType {
 				const webhookDescription = this.getNodeParameter('webhookDescription') as string;
 
 				try {
-					// Fetch domain info (needed for name generation and previousWebhookId)
-					const domain = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
+					// Fetch the domain (for name + previousWebhookId restoration) and,
+					// only in catch-all mode, the existing aliases (to restore the
+					// previous catch-all webhook on delete) — concurrently.
+					const [domain, aliasesResponse] = await Promise.all([
+						emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`),
+						aliasMode === 'catchall'
+							? emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`).catch(() => null)
+							: Promise.resolve(null),
+					]);
+
 					const previousWebhookId = domain.webhookId || '';
 
-					// Generate default webhook name if none provided
+					let previousCatchAllWebhookId = '';
+					if (aliasesResponse) {
+						const catchAllAlias = (aliasesResponse.aliases || []).find((a: any) => a.email?.startsWith('*@'));
+						if (catchAllAlias) {
+							previousCatchAllWebhookId = catchAllAlias.webhookId || '';
+						}
+					}
+
+					// Generate a default webhook name if none provided
 					if (!webhookName || webhookName.trim() === '') {
 						const domainName = domain.domain;
-
 						if (aliasMode === 'catchall') {
 							webhookName = `*@${domainName} endpoint trigger`;
-						} else if (aliasMode === 'specific') {
+						} else {
 							const aliasLocalPart = this.getNodeParameter('aliasLocalPart') as string;
 							webhookName = aliasLocalPart
 								? `${aliasLocalPart}@${domainName} endpoint trigger`
@@ -358,61 +350,22 @@ export class EmailConnectTrigger implements INodeType {
 						}
 					}
 
-					// Store previous IDs for restoration on delete
-					let previousDomainWebhookId = '';
-					let previousCatchAllWebhookId = '';
-
-					// Get catch-all alias webhook for restoration
-					try {
-						const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-						const aliases = response?.aliases || [];
-						const catchAllAlias = aliases.find((alias: any) => alias.email?.startsWith('*@'));
-						if (catchAllAlias) {
-							previousCatchAllWebhookId = catchAllAlias.webhookId || '';
-						}
-					} catch {
-						// non-critical
-					}
-
-					// Use the atomic endpoint for all modes
-					const webhookAliasData: any = {
-						domainId,
-						webhookUrl,
-						webhookName,
-						webhookDescription,
-						firstOrCreate: true,
-						updateWebhookData: true,
-						autoVerify: true,
-					};
-
-					if (aliasMode === 'catchall') {
-						webhookAliasData.aliasType = 'catchall';
-						webhookAliasData.syncWithDomain = true;
-					} else if (aliasMode === 'specific') {
-						const aliasLocalPart = this.getNodeParameter('aliasLocalPart') as string;
-						if (!aliasLocalPart) {
-							throw new NodeOperationError(this.getNode(), 'Alias local part is required for specific alias mode');
-						}
-						webhookAliasData.aliasType = 'specific';
-						webhookAliasData.localPart = aliasLocalPart;
-					}
-
+					// Atomic upsert: creates/updates webhook + alias and auto-verifies.
+					const webhookAliasData = buildWebhookAliasBody(this, webhookUrl, webhookName, webhookDescription);
 					const result = await emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
 
 					if (!result.success) {
 						throw new NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
 					}
 
-					const webhookId = result.webhook.id;
-					const aliasId = result.alias?.id || '';
-
 					// Store configuration for cleanup later
 					const staticData = this.getWorkflowStaticData('node');
 					staticData.domainId = domainId;
-					staticData.aliasId = aliasId;
-					staticData.webhookId = webhookId;
+					staticData.aliasId = result.alias?.id || '';
+					staticData.webhookId = result.webhook.id;
+					staticData.webhookName = webhookName;
 					staticData.previousWebhookId = previousWebhookId;
-					staticData.previousDomainWebhookId = previousDomainWebhookId;
+					staticData.previousDomainWebhookId = '';
 					staticData.previousCatchAllWebhookId = previousCatchAllWebhookId;
 					staticData.aliasMode = aliasMode;
 					if (aliasMode === 'specific') {
@@ -554,11 +507,8 @@ export class EmailConnectTrigger implements INodeType {
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const bodyData = this.getBodyData();
-		const events = this.getNodeParameter('events') as string[];
-		const domainId = this.getNodeParameter('domainId') as string;
-		const aliasId = this.getWorkflowStaticData('node').aliasId as string;
 
-		// Always accept and process any data - return 200 with the received data
+		// No / invalid body — typically the n8n "listen for test event" probe.
 		if (!bodyData || typeof bodyData !== 'object') {
 			return {
 				workflowData: [
@@ -568,7 +518,7 @@ export class EmailConnectTrigger implements INodeType {
 								test: true,
 								message: 'EmailConnect trigger webhook is working!',
 								receivedAt: new Date().toISOString(),
-								note: 'Send JSON data to see it processed'
+								note: 'Send JSON data to see it processed',
 							},
 						},
 					],
@@ -576,126 +526,20 @@ export class EmailConnectTrigger implements INodeType {
 			};
 		}
 
-		const emailData = bodyData as any;
+		const emailData = bodyData as IDataObject;
 
-		// Check if this is a webhook verification payload
+		// Webhook verification handshake — acknowledge with 200 but don't start
+		// the workflow with an internal verification payload.
 		if (emailData.type === 'webhook_verification') {
-			return {
-				workflowData: [
-					[
-						{
-							json: {
-								__emailconnect_internal: true,
-								type: 'webhook_verification',
-								message: 'Webhook verification received - this should not trigger workflow logic',
-								verification_token: emailData.verification_token,
-								webhook_id: emailData.webhook?.id,
-								receivedAt: new Date().toISOString(),
-								note: 'This is an internal verification payload and should be ignored by your workflow'
-							},
-						},
-					],
-				],
-			};
+			return { workflowData: [[]] };
 		}
 
-		// For EmailConnect production data, apply filters
-		const isEmailConnectData = emailData.message || emailData.envelope || emailData.status;
-
-		if (isEmailConnectData) {
-			const eventType = emailData.status || 'email.received';
-			if (!events.includes(eventType)) {
-				return {
-					workflowData: [
-						[
-							{
-								json: {
-									filtered: true,
-									reason: `Event type '${eventType}' not in configured events: ${events.join(', ')}`,
-									receivedData: emailData,
-									receivedAt: new Date().toISOString(),
-								},
-							},
-						],
-					],
-				};
-			}
-
-			if (domainId && emailData.domainId !== domainId) {
-				return {
-					workflowData: [
-						[
-							{
-								json: {
-									filtered: true,
-									reason: `Domain ID '${emailData.domainId}' does not match configured domain '${domainId}'`,
-									receivedData: emailData,
-									receivedAt: new Date().toISOString(),
-								},
-							},
-						],
-					],
-				};
-			}
-
-			if (aliasId && emailData.aliasId !== aliasId) {
-				return {
-					workflowData: [
-						[
-							{
-								json: {
-									filtered: true,
-									reason: `Alias ID '${emailData.aliasId}' does not match configured alias '${aliasId}'`,
-									receivedData: emailData,
-									receivedAt: new Date().toISOString(),
-								},
-							},
-						],
-					],
-				};
-			}
-
-			const processedData = {
-				id: emailData.id,
-				domainId: emailData.domainId,
-				receivedAt: emailData.receivedAt || new Date().toISOString(),
-				sender: emailData.sender,
-				recipient: emailData.recipient,
-				subject: emailData.subject,
-				status: emailData.status,
-				payload: emailData.payload,
-				errorMessage: emailData.errorMessage,
-				headers: emailData.payload?.headers || emailData.envelope?.headers || {},
-				textContent: emailData.payload?.text || emailData.message?.content?.text || '',
-				htmlContent: emailData.payload?.html || emailData.message?.content?.html || '',
-				attachments: emailData.payload?.attachments || emailData.message?.attachments || [],
-				envelope: emailData.payload?.envelope || emailData.envelope || {},
-				message: emailData.message,
-			};
-
-			return {
-				workflowData: [
-					[
-						{
-							json: processedData,
-						},
-					],
-				],
-			};
-		} else {
-			return {
-				workflowData: [
-					[
-						{
-							json: {
-								...emailData,
-								receivedAt: new Date().toISOString(),
-								note: 'Non-EmailConnect data received and processed',
-							},
-						},
-					],
-				],
-			};
-		}
+		// Emit the EmailConnect payload exactly as received. Delivery is already
+		// scoped to this alias/domain server-side, so no client-side domain/alias
+		// or event filtering is applied. Email content is under `message.*`,
+		// routing/headers under `envelope.*`, plus top-level `domainId`/`aliasId`.
+		return {
+			workflowData: [[{ json: emailData }]],
+		};
 	}
 }

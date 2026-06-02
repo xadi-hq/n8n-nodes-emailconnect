@@ -174,18 +174,13 @@ describe('EmailConnect Node Validation', () => {
       expect(description.webhooks[0].path).toBe('emailconnect');
     });
 
-    test('should have event filtering options', () => {
+    test('does not expose a non-functional event filter', () => {
+      // The delivered payload carries no event "status" field, so an event
+      // multiOptions selector cannot filter and was removed (it only ever
+      // dropped emails). Guard against it being reintroduced.
       const description = emailConnectTriggerNode.description;
       const eventsProperty = description.properties.find(p => p.name === 'events');
-      
-      expect(eventsProperty).toBeDefined();
-      expect(eventsProperty.type).toBe('multiOptions');
-      expect(eventsProperty.options).toHaveLength(3);
-      
-      const eventValues = eventsProperty.options.map(o => o.value);
-      expect(eventValues).toContain('email.received');
-      expect(eventValues).toContain('email.processed');
-      expect(eventValues).toContain('email.failed');
+      expect(eventsProperty).toBeUndefined();
     });
 
     test('should have domain and alias configuration', () => {
