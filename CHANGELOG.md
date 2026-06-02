@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-06-02
+
+### Fixed
+- **Trigger dropped incoming emails.** Removed the client-side `domainId`/`aliasId` filter that rejected payloads when the server-resolved IDs differed from the stored ones (e.g. the "Test webhook" feature, cross-domain rebinds). Delivery is already scoped to the alias/domain server-side, so the filter was redundant and only ever discarded valid emails.
+- **Webhook now re-verifies on a test↔production URL switch.** On a URL change the node re-asserts verification through `POST /api/webhooks/alias` (`autoVerify`), instead of the dead `PUT` + `slice(-5)` verify/complete flow (the standalone verify endpoint expects a server-generated token the node can't know, so it could never succeed). This removes the need to verify manually after activating a workflow.
+
+### Changed
+- The trigger now emits the **raw EmailConnect payload** as received (`message.*`, `envelope.*`, `security.*`, plus top-level `domainId`/`aliasId`) instead of a lossy flattened object whose top-level `sender`/`subject`/`status` were always `undefined`. Update expressions to read `message.*` / `envelope.*`.
+- Removed the non-functional **"Events"** selector — the delivered payload carries no event-type field, so it could only ever drop every email when set to anything other than the default.
+
+### Performance
+- Activation is slightly faster: the domain and alias lookups now run concurrently, and the alias lookup is skipped entirely outside catch-all mode.
+
+### Removed
+- Stale planning docs (`docs/TODO.md`, `docs/api-differences.md`, `docs/nodes/`) and the unused bundled `emailconnect-openapi.json`; pruned outdated `claudedocs/`.
+
 ## [1.2.1] - 2026-06-02
 
 ### Fixed

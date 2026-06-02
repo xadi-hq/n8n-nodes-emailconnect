@@ -49,7 +49,7 @@ describe('EmailConnect Webhook URL Switching', () => {
   });
 
   describe('URL Change Detection and Update', () => {
-    test('should update webhook URL when switching from production to test', async () => {
+    test('should re-upsert (URL + re-verify) when switching from production to test', async () => {
       const testUrl = 'https://n8n.axtg.mywire.org:5678/webhook-test/d88abf53-c967-462c-b371-ddd8230e7939/emailconnect';
       const productionUrl = 'https://n8n.axtg.mywire.org:5678/webhook/d88abf53-c967-462c-b371-ddd8230e7939/emailconnect';
       const webhookId = 'existing-webhook-id';
@@ -59,71 +59,55 @@ describe('EmailConnect Webhook URL Switching', () => {
       mockStaticData.webhookId = webhookId;
       mockStaticData.aliasId = 'test-alias-id';
 
-      // Mock API responses:
-      // 1. GET webhook (tryStoredWebhook)
-      // 2. PUT webhook URL (updateWebhookUrlAndVerify)
-      // 3. POST verify (not verified)
-      // 4. POST verify/complete
-      // 5. GET alias (ensureWebhookAliasLinkage)
+      // 1. GET webhook (tryStoredWebhook) — URL differs
+      // 2. POST /api/webhooks/alias (atomic upsert: update URL + autoVerify)
       emailConnectApiRequest
         .mockResolvedValueOnce({ id: webhookId, url: productionUrl, name: 'Test Webhook', verified: true })
-        .mockResolvedValueOnce({ verified: false }) // PUT response — not verified
-        .mockResolvedValueOnce({}) // POST verify
-        .mockResolvedValueOnce({}) // POST verify/complete
-        .mockResolvedValueOnce({ webhookId: webhookId }); // GET alias — linkage OK
+        .mockResolvedValueOnce({ success: true, webhook: { id: webhookId }, alias: { id: 'test-alias-id' } });
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
       expect(result).toBe(true);
-
-      // Verify webhook lookup
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(1, 'GET', `/api/webhooks/${webhookId}`);
-
-      // Verify webhook update with test URL and description
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', `/api/webhooks/${webhookId}`, {
-        url: testUrl,
-        description: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)'
-      });
-
-      // Verify webhook verification calls
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(3, 'POST', `/api/webhooks/${webhookId}/verify`);
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(4, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
-        verificationToken: webhookId.slice(-5)
-      });
+      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
+        expect.objectContaining({
+          domainId: 'test-domain-id',
+          webhookUrl: testUrl,
+          aliasType: 'specific',
+          localPart: 'support',
+          autoVerify: true,
+          webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)',
+        }),
+      );
+      // No PUT or /verify calls anymore
+      const methods = emailConnectApiRequest.mock.calls.map(c => `${c[0]} ${c[1]}`);
+      expect(methods.some(m => m.startsWith('PUT'))).toBe(false);
+      expect(methods.some(m => m.includes('/verify'))).toBe(false);
     });
 
-    test('should update webhook URL when switching from test to production', async () => {
+    test('should re-upsert when switching from test to production', async () => {
       const testUrl = 'https://n8n.axtg.mywire.org:5678/webhook-test/d88abf53-c967-462c-b371-ddd8230e7939/emailconnect';
       const productionUrl = 'https://n8n.axtg.mywire.org:5678/webhook/d88abf53-c967-462c-b371-ddd8230e7939/emailconnect';
       const webhookId = 'existing-webhook-id';
 
-      // Setup: webhook exists with test URL, but current URL is production
       mockContext.getNodeWebhookUrl.mockReturnValue(productionUrl);
       mockStaticData.webhookId = webhookId;
       mockStaticData.aliasId = 'test-alias-id';
 
       emailConnectApiRequest
         .mockResolvedValueOnce({ id: webhookId, url: testUrl, name: 'Test Webhook', verified: true })
-        .mockResolvedValueOnce({ verified: false })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ webhookId: webhookId });
+        .mockResolvedValueOnce({ success: true, webhook: { id: webhookId }, alias: { id: 'test-alias-id' } });
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
       expect(result).toBe(true);
-
-      // Verify webhook update with production URL and description
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', `/api/webhooks/${webhookId}`, {
-        url: productionUrl,
-        description: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)'
-      });
-
-      // Verify webhook verification calls
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(3, 'POST', `/api/webhooks/${webhookId}/verify`);
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(4, 'POST', `/api/webhooks/${webhookId}/verify/complete`, {
-        verificationToken: webhookId.slice(-5)
-      });
+      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
+        expect.objectContaining({
+          webhookUrl: productionUrl,
+          autoVerify: true,
+          webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)',
+        }),
+      );
     });
 
     test('should return true when webhook URL matches (no update needed)', async () => {
@@ -205,12 +189,8 @@ describe('EmailConnect Webhook URL Switching', () => {
       delete mockStaticData.webhookId;
       mockStaticData.aliasId = 'test-alias-id';
 
-      // Mock API responses:
-      // 1. GET /api/webhooks (fallback list)
-      // 2. PUT webhook (updateWebhookUrlAndVerify)
-      // 3. POST verify
-      // 4. POST verify/complete
-      // 5. GET alias (ensureWebhookAliasLinkage)
+      // 1. GET /api/webhooks (fallback list) — UUID match found
+      // 2. POST /api/webhooks/alias (atomic upsert with the production URL)
       emailConnectApiRequest
         .mockResolvedValueOnce({
           webhooks: [
@@ -218,29 +198,19 @@ describe('EmailConnect Webhook URL Switching', () => {
             { id: 'existing-webhook', url: existingUrl }
           ]
         })
-        .mockResolvedValueOnce({ verified: false })
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ webhookId: 'existing-webhook' });
+        .mockResolvedValueOnce({ success: true, webhook: { id: 'existing-webhook' }, alias: { id: 'test-alias-id' } });
 
       const result = await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
       expect(result).toBe(true);
 
-      // Should store the webhook ID
+      // Should store the matched webhook ID
       expect(mockStaticData.webhookId).toBe('existing-webhook');
 
-      // Should update the webhook URL from test to production
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', '/api/webhooks/existing-webhook', {
-        url: currentUrl,
-        description: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)'
-      });
-
-      // Should verify the webhook
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(3, 'POST', '/api/webhooks/existing-webhook/verify');
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(4, 'POST', '/api/webhooks/existing-webhook/verify/complete', {
-        verificationToken: 'bhook' // last 5 chars of 'existing-webhook'
-      });
+      // Should re-upsert via the atomic endpoint with the current (production) URL
+      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
+        expect.objectContaining({ webhookUrl: currentUrl, autoVerify: true }),
+      );
     });
 
     test('should handle API errors gracefully', async () => {
@@ -292,7 +262,7 @@ describe('EmailConnect Webhook URL Switching', () => {
   });
 
   describe('URL Pattern Detection', () => {
-    test('should correctly identify test URLs', async () => {
+    test('describes the webhook as Test mode for a /webhook-test/ URL', async () => {
       const testUrl = 'https://n8n.axtg.mywire.org:5678/webhook-test/some-id/emailconnect';
       const webhookId = 'test-webhook-id';
 
@@ -306,19 +276,19 @@ describe('EmailConnect Webhook URL Switching', () => {
           url: 'https://n8n.axtg.mywire.org:5678/webhook/some-id/emailconnect',
           name: 'Test Webhook'
         })
-        .mockResolvedValueOnce({ verified: true }) // PUT response — already verified
-        .mockResolvedValueOnce({ webhookId: webhookId }); // GET alias (ensureWebhookAliasLinkage)
+        .mockResolvedValueOnce({ success: true, webhook: { id: webhookId }, alias: { id: 'test-alias-id' } });
 
       await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
-      // Verify the description indicates Test mode
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', `/api/webhooks/${webhookId}`, {
-        url: testUrl,
-        description: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)'
-      });
+      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
+        expect.objectContaining({
+          webhookUrl: testUrl,
+          webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)',
+        }),
+      );
     });
 
-    test('should correctly identify production URLs', async () => {
+    test('describes the webhook as Production mode for a /webhook/ URL', async () => {
       const productionUrl = 'https://n8n.axtg.mywire.org:5678/webhook/some-id/emailconnect';
       const webhookId = 'prod-webhook-id';
 
@@ -332,19 +302,19 @@ describe('EmailConnect Webhook URL Switching', () => {
           url: 'https://n8n.axtg.mywire.org:5678/webhook-test/some-id/emailconnect',
           name: 'Test Webhook'
         })
-        .mockResolvedValueOnce({ verified: true })
-        .mockResolvedValueOnce({ webhookId: webhookId });
+        .mockResolvedValueOnce({ success: true, webhook: { id: webhookId }, alias: { id: 'test-alias-id' } });
 
       await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
-      // Verify the description indicates Production mode
-      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'PUT', `/api/webhooks/${webhookId}`, {
-        url: productionUrl,
-        description: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)'
-      });
+      expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
+        expect.objectContaining({
+          webhookUrl: productionUrl,
+          webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)',
+        }),
+      );
     });
 
-    test('should skip verification when PUT response shows verified', async () => {
+    test('uses the atomic upsert on URL change (no PUT or /verify calls)', async () => {
       const testUrl = 'https://n8n.axtg.mywire.org:5678/webhook-test/some-id/emailconnect';
       const webhookId = 'test-webhook-id';
 
@@ -354,16 +324,15 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       emailConnectApiRequest
         .mockResolvedValueOnce({ id: webhookId, url: 'https://other.url', name: 'Webhook' })
-        .mockResolvedValueOnce({ verified: true }) // PUT response says verified
-        .mockResolvedValueOnce({ webhookId: webhookId }); // ensureWebhookAliasLinkage
+        .mockResolvedValueOnce({ success: true, webhook: { id: webhookId }, alias: { id: 'test-alias-id' } });
 
       await triggerNode.webhookMethods.default.checkExists.call(mockContext);
 
-      // Should be: GET webhook, PUT webhook, GET alias — no verify calls
-      expect(emailConnectApiRequest).toHaveBeenCalledTimes(3);
-      // No POST verify calls
+      // GET webhook + POST /api/webhooks/alias — exactly 2 calls, no PUT / verify
+      expect(emailConnectApiRequest).toHaveBeenCalledTimes(2);
       const calls = emailConnectApiRequest.mock.calls;
-      expect(calls.every(c => c[0] !== 'POST')).toBe(true);
+      expect(calls.some(c => c[0] === 'PUT')).toBe(false);
+      expect(calls.some(c => typeof c[1] === 'string' && c[1].includes('/verify'))).toBe(false);
     });
   });
 });
