@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-06-02
+
+### Fixed
+- Pass authentication through `httpRequestWithAuthentication` instead of injecting the `X-API-KEY` header manually (required by the `@n8n/eslint-plugin-community-nodes` verification ruleset).
+- Remove the `overrides` field from `package.json` (not permitted in community node packages).
+
 ## [1.2.0] - 2026-06-02
 
 ### Fixed

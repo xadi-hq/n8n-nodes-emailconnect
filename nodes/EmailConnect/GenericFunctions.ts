@@ -20,14 +20,11 @@ export async function emailConnectApiRequest(
 	uri?: string,
 	headers: any = {},
 ): Promise<any> {
-	const credentials = await this.getCredentials('emailConnectApi');
-
 	const hasBody = Object.keys(body).length > 0;
 
 	const options: IHttpRequestOptions = {
 		method,
 		headers: {
-			'X-API-KEY': credentials.apiKey,
 			...(hasBody && { 'Content-Type': 'application/json' }),
 			...headers,
 		},
@@ -38,7 +35,9 @@ export async function emailConnectApiRequest(
 	};
 
 	try {
-		return await this.helpers.httpRequest(options);
+		// Authentication (the X-API-KEY header) is applied from the credential's
+		// `authenticate` block by httpRequestWithAuthentication.
+		return await this.helpers.httpRequestWithAuthentication.call(this, 'emailConnectApi', options);
 	} catch (error) {
 		throw new NodeApiError(this.getNode(), error as any);
 	}

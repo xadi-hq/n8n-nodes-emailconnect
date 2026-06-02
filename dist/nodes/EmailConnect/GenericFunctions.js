@@ -7,12 +7,10 @@ exports.getAliasOptions = getAliasOptions;
 const n8n_workflow_1 = require("n8n-workflow");
 exports.API_BASE_URL = 'https://app.emailconnect.eu';
 async function emailConnectApiRequest(method, resource, body = {}, qs = {}, uri, headers = {}) {
-    const credentials = await this.getCredentials('emailConnectApi');
     const hasBody = Object.keys(body).length > 0;
     const options = {
         method,
         headers: {
-            'X-API-KEY': credentials.apiKey,
             ...(hasBody && { 'Content-Type': 'application/json' }),
             ...headers,
         },
@@ -22,7 +20,9 @@ async function emailConnectApiRequest(method, resource, body = {}, qs = {}, uri,
         json: true,
     };
     try {
-        return await this.helpers.httpRequest(options);
+        // Authentication (the X-API-KEY header) is applied from the credential's
+        // `authenticate` block by httpRequestWithAuthentication.
+        return await this.helpers.httpRequestWithAuthentication.call(this, 'emailConnectApi', options);
     }
     catch (error) {
         throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
