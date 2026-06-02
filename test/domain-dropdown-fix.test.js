@@ -8,10 +8,10 @@ const { getDomainOptions } = require('../dist/nodes/EmailConnect/GenericFunction
 
 function makeContext(httpImpl) {
 	return {
-		getCredentials: jest.fn().mockResolvedValue({ apiKey: 'test-api-key' }),
 		getNode: jest.fn().mockReturnValue({ name: 'EmailConnect Trigger', type: 'emailConnectTrigger' }),
 		helpers: {
-			httpRequest: jest.fn().mockImplementation(httpImpl),
+			// The node authenticates via httpRequestWithAuthentication.
+			httpRequestWithAuthentication: jest.fn().mockImplementation(httpImpl),
 		},
 	};
 }
