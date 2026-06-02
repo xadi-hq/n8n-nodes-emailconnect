@@ -87,6 +87,40 @@ describe('EmailConnect Node Validation', () => {
       expect(operationValues).toContain('delete');
     });
 
+    test('alias create should require a webhook and not use destinationEmail', () => {
+      const description = emailConnectNode.description;
+      const properties = description.properties;
+
+      // Regression guard: aliases route to a webhook (webhookId), never to a
+      // forwarding "destinationEmail" (which the API has never supported).
+      const destinationEmail = properties.find(p => p.name === 'destinationEmail');
+      expect(destinationEmail).toBeUndefined();
+
+      const aliasWebhookId = properties.find(p => p.name === 'aliasWebhookId');
+      expect(aliasWebhookId).toBeDefined();
+      expect(aliasWebhookId.required).toBe(true);
+      expect(aliasWebhookId.typeOptions.loadOptionsMethod).toBe('getWebhooks');
+      expect(aliasWebhookId.displayOptions.show.operation).toEqual(['create']);
+
+      const localPart = properties.find(p => p.name === 'localPart');
+      expect(localPart).toBeDefined();
+      expect(localPart.required).toBe(true);
+    });
+
+    test('getAll operations expose Return All / Limit', () => {
+      const properties = emailConnectNode.description.properties;
+      const returnAll = properties.find(p => p.name === 'returnAll');
+      const limit = properties.find(p => p.name === 'limit');
+
+      expect(returnAll).toBeDefined();
+      expect(returnAll.type).toBe('boolean');
+      expect(returnAll.displayOptions.show.operation).toEqual(['getAll']);
+
+      expect(limit).toBeDefined();
+      expect(limit.type).toBe('number');
+      expect(limit.displayOptions.show.returnAll).toEqual([false]);
+    });
+
     test('should have webhook operations', () => {
       const description = emailConnectNode.description;
       const webhookOperations = description.properties.find(p =>

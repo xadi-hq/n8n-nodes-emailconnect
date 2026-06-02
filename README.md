@@ -111,8 +111,8 @@ A trigger node that starts workflows when EmailConnect processes emails.
         "resource": "alias",
         "operation": "create",
         "domainId": "your-domain-id",
-        "aliasName": "support",
-        "description": "Customer support emails"
+        "localPart": "support",
+        "aliasWebhookId": "your-webhook-id"
       }
     }
   ]
@@ -311,25 +311,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Changelog
 
-### v0.2.4 (2025-06-21)
-- **Fixed**: Catch-all alias creation conflicts - existing catch-all aliases are now updated instead of failing with 409 errors
-- **Fixed**: Webhook-alias unlinking during test/production URL switching - webhooks now maintain proper linkage
-- **Enhanced**: Domain-catchall synchronization - webhooks stay synchronized between domain and catch-all aliases
-- **Improved**: Error handling and logging for webhook lifecycle operations
-- **Added**: Comprehensive documentation for webhook lifecycle management
-- **Note**: Webhook cleanup on node deletion is limited by n8n framework changes (see Known Limitations)
-
-### v0.2.0
-- Enhanced trigger node functionality
-- Improved webhook management
-- Better error handling and validation
-- Updated API integration
-
-### v0.1.0
-- Initial release
-- EmailConnect node with domain, alias, and webhook operations
-- EmailConnect trigger node with event filtering
-- Complete API integration with "API User" scope support
+See [CHANGELOG.md](CHANGELOG.md) and the [GitHub releases](https://github.com/xadi-hq/n8n-nodes-emailconnect/releases) for the full version history.
 
 ## Detailed Node Documentation
 
@@ -379,17 +361,17 @@ MIT License - see [LICENSE](LICENSE) file for details.
 **Create Alias**
 - **Operation**: `create`
 - **Parameters**:
-  - `domainId` (required): The domain ID to create alias under
-  - `aliasName` (required): The alias name (e.g., "support")
-  - `description` (optional): Description of the alias
+  - `domainId` (required): The domain the alias belongs to
+  - `localPart` (required): The part before the `@` (e.g. `support` for `support@yourdomain.com`, or `*` for catch-all)
+  - `aliasWebhookId` (required): The webhook that receives email sent to this alias
+  - **Additional Fields** (optional): `active`, `allowAttachments`, `includeEnvelope`, `includeHtml`, `includeText`
 - **Output**: Created alias object with generated ID
 
 **Update Alias**
 - **Operation**: `update`
 - **Parameters**:
   - `aliasId` (required): The ID of the alias to update
-  - `aliasName` (optional): New alias name
-  - `description` (optional): New description
+  - **Update Fields** (at least one): `email`, `webhookId`, `active`, `allowAttachments`, `includeEnvelope`, `includeHtml`, `includeText`
 - **Output**: Updated alias object
 
 **Delete Alias**

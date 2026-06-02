@@ -1,10 +1,12 @@
 import {
+	IDataObject,
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
 	INodeExecutionData,
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
+	NodeOperationError,
 	type NodeConnectionType,
 } from 'n8n-workflow';
 
@@ -22,8 +24,8 @@ export class EmailConnect implements INodeType {
 		defaults: {
 			name: 'EmailConnect',
 		},
-		inputs: ['main' as NodeConnectionType],
-		outputs: ['main' as NodeConnectionType],
+		inputs: ['main'] as NodeConnectionType[],
+		outputs: ['main'] as NodeConnectionType[],
 		credentials: [
 			{
 				name: 'emailConnectApi',
@@ -236,19 +238,139 @@ export class EmailConnect implements INodeType {
 				placeholder: 'support',
 			},
 			{
-				displayName: 'Destination Email',
-				name: 'destinationEmail',
-				type: 'string',
+				displayName: 'Webhook Name or ID',
+				name: 'aliasWebhookId',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getWebhooks',
+				},
 				required: true,
 				displayOptions: {
 					show: {
 						resource: ['alias'],
-						operation: ['create', 'update'],
+						operation: ['create'],
 					},
 				},
 				default: '',
-				description: 'The email address to forward to',
-				placeholder: 'user@example.com',
+				description: 'The webhook that receives emails sent to this alias. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+			},
+			{
+				displayName: 'Additional Fields',
+				name: 'aliasAdditionalFields',
+				type: 'collection',
+				placeholder: 'Add Field',
+				default: {},
+				displayOptions: {
+					show: {
+						resource: ['alias'],
+						operation: ['create'],
+					},
+				},
+				options: [
+					{
+						displayName: 'Active',
+						name: 'active',
+						type: 'boolean',
+						default: true,
+						description: 'Whether the alias is active and routes incoming email',
+					},
+					{
+						displayName: 'Allow Attachments',
+						name: 'allowAttachments',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to include email attachments in the webhook payload',
+					},
+					{
+						displayName: 'Include Envelope',
+						name: 'includeEnvelope',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to include SMTP envelope data in the webhook payload',
+					},
+					{
+						displayName: 'Include HTML',
+						name: 'includeHtml',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to include the HTML body in the webhook payload',
+					},
+					{
+						displayName: 'Include Text',
+						name: 'includeText',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to include the plain-text body in the webhook payload',
+					},
+				],
+			},
+			{
+				displayName: 'Update Fields',
+				name: 'aliasUpdateFields',
+				type: 'collection',
+				placeholder: 'Add Field',
+				default: {},
+				displayOptions: {
+					show: {
+						resource: ['alias'],
+						operation: ['update'],
+					},
+				},
+				options: [
+					{
+						displayName: 'Active',
+						name: 'active',
+						type: 'boolean',
+						default: true,
+						description: 'Whether the alias is active and routes incoming email',
+					},
+					{
+						displayName: 'Allow Attachments',
+						name: 'allowAttachments',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to include email attachments in the webhook payload',
+					},
+					{
+						displayName: 'Email',
+						name: 'email',
+						type: 'string',
+						default: '',
+						placeholder: 'support@example.com',
+						description: 'Full email address, or a catch-all pattern such as *@example.com',
+					},
+					{
+						displayName: 'Include Envelope',
+						name: 'includeEnvelope',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to include SMTP envelope data in the webhook payload',
+					},
+					{
+						displayName: 'Include HTML',
+						name: 'includeHtml',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to include the HTML body in the webhook payload',
+					},
+					{
+						displayName: 'Include Text',
+						name: 'includeText',
+						type: 'boolean',
+						default: true,
+						description: 'Whether to include the plain-text body in the webhook payload',
+					},
+					{
+						displayName: 'Webhook Name or ID',
+						name: 'webhookId',
+						type: 'options',
+						typeOptions: {
+							loadOptionsMethod: 'getWebhooks',
+						},
+						default: '',
+						description: 'The webhook that receives emails sent to this alias. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+					},
+				],
 			},
 
 			// Webhook Operations
@@ -361,6 +483,36 @@ export class EmailConnect implements INodeType {
 				description: 'Optional description for the webhook',
 				placeholder: 'Main email processing webhook',
 			},
+
+			// Shared "Get Many" pagination controls (all resources)
+			{
+				displayName: 'Return All',
+				name: 'returnAll',
+				type: 'boolean',
+				displayOptions: {
+					show: {
+						operation: ['getAll'],
+					},
+				},
+				default: false,
+				description: 'Whether to return all results or only up to a given limit',
+			},
+			{
+				displayName: 'Limit',
+				name: 'limit',
+				type: 'number',
+				displayOptions: {
+					show: {
+						operation: ['getAll'],
+						returnAll: [false],
+					},
+				},
+				typeOptions: {
+					minValue: 1,
+				},
+				default: 50,
+				description: 'Max number of results to return',
+			},
 		],
 	};
 
@@ -393,12 +545,21 @@ export class EmailConnect implements INodeType {
 		const resource = this.getNodeParameter('resource', 0);
 		const operation = this.getNodeParameter('operation', 0);
 
+		// Client-side pagination: the API returns the full list, so honour the
+		// node's Return All / Limit controls here.
+		const limitItems = (list: any, itemIndex: number): any[] => {
+			const all = Array.isArray(list) ? list : [];
+			if (this.getNodeParameter('returnAll', itemIndex) as boolean) return all;
+			const limit = this.getNodeParameter('limit', itemIndex) as number;
+			return all.slice(0, limit);
+		};
+
 		for (let i = 0; i < items.length; i++) {
 			try {
 				if (resource === 'domain') {
 					if (operation === 'getAll') {
 						const response = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
-						const domains = response?.domains || [];
+						const domains = limitItems(response?.domains, i);
 						returnData.push(...domains.map((item: any) => ({ json: item })));
 					} else if (operation === 'get') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
@@ -410,10 +571,8 @@ export class EmailConnect implements INodeType {
 						const includeEnvelopeData = this.getNodeParameter('includeEnvelopeData', i) as boolean;
 
 						const body = {
-							configuration: {
-								allowAttachments,
-								includeEnvelopeData,
-							},
+							allowAttachments,
+							includeEnvelope: includeEnvelopeData,
 						};
 
 						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}`, body);
@@ -423,7 +582,7 @@ export class EmailConnect implements INodeType {
 					if (operation === 'getAll') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
-						const aliases = response?.aliases || [];
+						const aliases = limitItems(response?.aliases, i);
 						returnData.push(...aliases.map((item: any) => ({ json: item })));
 					} else if (operation === 'get') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
@@ -432,17 +591,21 @@ export class EmailConnect implements INodeType {
 					} else if (operation === 'create') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const localPart = this.getNodeParameter('localPart', i) as string;
-						const destinationEmail = this.getNodeParameter('destinationEmail', i) as string;
+						const webhookId = this.getNodeParameter('aliasWebhookId', i) as string;
+						const additionalFields = this.getNodeParameter('aliasAdditionalFields', i, {}) as IDataObject;
 
-						const body = { domainId, localPart, destinationEmail };
+						const body = { localPart, domainId, webhookId, ...additionalFields };
 						const responseData = await emailConnectApiRequest.call(this, 'POST', '/api/aliases', body);
 						returnData.push({ json: responseData });
 					} else if (operation === 'update') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
-						const destinationEmail = this.getNodeParameter('destinationEmail', i) as string;
+						const updateFields = this.getNodeParameter('aliasUpdateFields', i, {}) as IDataObject;
 
-						const body = { destinationEmail };
-						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}`, body);
+						if (Object.keys(updateFields).length === 0) {
+							throw new NodeOperationError(this.getNode(), 'Select at least one field to update', { itemIndex: i });
+						}
+
+						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}`, updateFields);
 						returnData.push({ json: responseData });
 					} else if (operation === 'delete') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
@@ -452,7 +615,7 @@ export class EmailConnect implements INodeType {
 				} else if (resource === 'webhook') {
 					if (operation === 'getAll') {
 						const response = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
-						const webhooks = response?.webhooks || [];
+						const webhooks = limitItems(response?.webhooks, i);
 						returnData.push(...webhooks.map((item: any) => ({ json: item })));
 					} else if (operation === 'get') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
