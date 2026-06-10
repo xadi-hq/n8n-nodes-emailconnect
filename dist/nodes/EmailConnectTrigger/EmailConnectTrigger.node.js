@@ -3,6 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailConnectTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const GenericFunctions_1 = require("../EmailConnect/GenericFunctions");
+// Sanctioned trusted-source header: the backend auto-verifies webhooks
+// created/updated by known integrations (n8n-node, zapier, make). Sent on
+// every atomic upsert as belt-and-braces alongside the autoVerify body flag.
+const TRUSTED_SOURCE_HEADERS = { 'X-EmailConnect-Source': 'n8n-node' };
 // ---------------------------------------------------------------------------
 // Helper: build the body for the atomic POST /api/webhooks/alias upsert.
 // Shared by create() and the URL-change path so both use the one mechanism
@@ -50,7 +54,7 @@ async function updateWebhookUrlAndVerify(context, webhookUrl) {
         || `n8n trigger (${context.getNode().name})`;
     const webhookDescription = `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
     const body = buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescription);
-    const result = await GenericFunctions_1.emailConnectApiRequest.call(context, 'POST', '/api/webhooks/alias', body);
+    const result = await GenericFunctions_1.emailConnectApiRequest.call(context, 'POST', '/api/webhooks/alias', body, {}, undefined, TRUSTED_SOURCE_HEADERS);
     if ((_a = result === null || result === void 0 ? void 0 : result.webhook) === null || _a === void 0 ? void 0 : _a.id)
         staticData.webhookId = result.webhook.id;
     if ((_b = result === null || result === void 0 ? void 0 : result.alias) === null || _b === void 0 ? void 0 : _b.id)
@@ -310,7 +314,7 @@ class EmailConnectTrigger {
                         }
                         // Atomic upsert: creates/updates webhook + alias and auto-verifies.
                         const webhookAliasData = buildWebhookAliasBody(this, webhookUrl, webhookName, webhookDescription);
-                        const result = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
+                        const result = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData, {}, undefined, TRUSTED_SOURCE_HEADERS);
                         if (!result.success) {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
                         }

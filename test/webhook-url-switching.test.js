@@ -78,6 +78,9 @@ describe('EmailConnect Webhook URL Switching', () => {
           autoVerify: true,
           webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)',
         }),
+        {},
+        undefined,
+        { 'X-EmailConnect-Source': 'n8n-node' },
       );
       // No PUT or /verify calls anymore
       const methods = emailConnectApiRequest.mock.calls.map(c => `${c[0]} ${c[1]}`);
@@ -107,6 +110,9 @@ describe('EmailConnect Webhook URL Switching', () => {
           autoVerify: true,
           webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)',
         }),
+        {},
+        undefined,
+        { 'X-EmailConnect-Source': 'n8n-node' },
       );
     });
 
@@ -210,6 +216,9 @@ describe('EmailConnect Webhook URL Switching', () => {
       // Should re-upsert via the atomic endpoint with the current (production) URL
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
         expect.objectContaining({ webhookUrl: currentUrl, autoVerify: true }),
+        {},
+        undefined,
+        { 'X-EmailConnect-Source': 'n8n-node' },
       );
     });
 
@@ -285,6 +294,9 @@ describe('EmailConnect Webhook URL Switching', () => {
           webhookUrl: testUrl,
           webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)',
         }),
+        {},
+        undefined,
+        { 'X-EmailConnect-Source': 'n8n-node' },
       );
     });
 
@@ -311,6 +323,9 @@ describe('EmailConnect Webhook URL Switching', () => {
           webhookUrl: productionUrl,
           webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)',
         }),
+        {},
+        undefined,
+        { 'X-EmailConnect-Source': 'n8n-node' },
       );
     });
 
