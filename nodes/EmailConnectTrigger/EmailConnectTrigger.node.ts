@@ -11,6 +11,11 @@ import {
 
 import { emailConnectApiRequest, getDomainOptions } from '../EmailConnect/GenericFunctions';
 
+// Sanctioned trusted-source header: the backend auto-verifies webhooks
+// created/updated by known integrations (n8n-node, zapier, make). Sent on
+// every atomic upsert as belt-and-braces alongside the autoVerify body flag.
+const TRUSTED_SOURCE_HEADERS = { 'X-EmailConnect-Source': 'n8n-node' };
+
 // ---------------------------------------------------------------------------
 // Helper: build the body for the atomic POST /api/webhooks/alias upsert.
 // Shared by create() and the URL-change path so both use the one mechanism
@@ -69,7 +74,15 @@ async function updateWebhookUrlAndVerify(
 	const webhookDescription = `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
 
 	const body = buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescription);
-	const result = await emailConnectApiRequest.call(context, 'POST', '/api/webhooks/alias', body);
+	const result = await emailConnectApiRequest.call(
+		context,
+		'POST',
+		'/api/webhooks/alias',
+		body,
+		{},
+		undefined,
+		TRUSTED_SOURCE_HEADERS,
+	);
 
 	if (result?.webhook?.id) staticData.webhookId = result.webhook.id;
 	if (result?.alias?.id) staticData.aliasId = result.alias.id;
@@ -352,7 +365,15 @@ export class EmailConnectTrigger implements INodeType {
 
 					// Atomic upsert: creates/updates webhook + alias and auto-verifies.
 					const webhookAliasData = buildWebhookAliasBody(this, webhookUrl, webhookName, webhookDescription);
-					const result = await emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias', webhookAliasData);
+					const result = await emailConnectApiRequest.call(
+						this,
+						'POST',
+						'/api/webhooks/alias',
+						webhookAliasData,
+						{},
+						undefined,
+						TRUSTED_SOURCE_HEADERS,
+					);
 
 					if (!result.success) {
 						throw new NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
