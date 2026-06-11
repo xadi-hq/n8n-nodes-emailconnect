@@ -46,19 +46,38 @@ function buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescript
 // cannot reproduce — so autoVerify via /api/webhooks/alias is the only path
 // that keeps the production webhook verified.
 // ---------------------------------------------------------------------------
-async function updateWebhookUrlAndVerify(context, webhookUrl) {
+async function updateWebhookUrlAndVerify(context, webhookUrl, existing) {
     var _a, _b;
     const staticData = context.getWorkflowStaticData('node');
     const isTestUrl = (webhookUrl !== null && webhookUrl !== void 0 ? webhookUrl : '').includes('/webhook-test/');
-    const webhookName = staticData.webhookName
+    // The upsert (updateWebhookData) overwrites name/description, and static
+    // data from the test session is not available at activation — so prefer
+    // the node parameter, then static data, then whatever the webhook already
+    // carries. Only generate a name/description when none of those exist.
+    const webhookName = context.getNodeParameter('webhookName')
+        || staticData.webhookName
+        || (existing === null || existing === void 0 ? void 0 : existing.name)
         || `n8n trigger (${context.getNode().name})`;
-    const webhookDescription = `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
+    const webhookDescription = context.getNodeParameter('webhookDescription')
+        || (existing === null || existing === void 0 ? void 0 : existing.description)
+        || `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
     const body = buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescription);
     const result = await GenericFunctions_1.emailConnectApiRequest.call(context, 'POST', '/api/webhooks/alias', body, {}, undefined, TRUSTED_SOURCE_HEADERS);
     if ((_a = result === null || result === void 0 ? void 0 : result.webhook) === null || _a === void 0 ? void 0 : _a.id)
         staticData.webhookId = result.webhook.id;
     if ((_b = result === null || result === void 0 ? void 0 : result.alias) === null || _b === void 0 ? void 0 : _b.id)
         staticData.aliasId = result.alias.id;
+}
+// ---------------------------------------------------------------------------
+// Helper: forget everything stored about the current registration.
+// ---------------------------------------------------------------------------
+function clearRegistrationState(staticData) {
+    delete staticData.domainId;
+    delete staticData.aliasId;
+    delete staticData.webhookId;
+    delete staticData.previousWebhookId;
+    delete staticData.previousDomainWebhookId;
+    delete staticData.previousCatchAllWebhookId;
 }
 // ---------------------------------------------------------------------------
 // Helper: detect whether alias/domain config changed since last save.
@@ -108,7 +127,7 @@ async function tryStoredWebhook(context, webhookUrl) {
         const webhook = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/webhooks/${storedWebhookId}`);
         if (webhook.url !== webhookUrl) {
             // URL changed (e.g. test↔prod) — re-upsert to update URL & re-verify
-            await updateWebhookUrlAndVerify(context, webhookUrl);
+            await updateWebhookUrlAndVerify(context, webhookUrl, webhook);
             return true;
         }
         // URL matches — nothing changed
@@ -261,7 +280,7 @@ class EmailConnectTrigger {
                             const uuidHit = webhooks.find((wh) => { var _a; return (_a = wh.url) === null || _a === void 0 ? void 0 : _a.includes(currentUuid); });
                             if (uuidHit) {
                                 this.getWorkflowStaticData('node').webhookId = uuidHit.id;
-                                await updateWebhookUrlAndVerify(this, webhookUrl);
+                                await updateWebhookUrlAndVerify(this, webhookUrl, uuidHit);
                                 return true;
                             }
                         }
@@ -351,12 +370,36 @@ class EmailConnectTrigger {
                         const previousDomainWebhookId = staticData.previousDomainWebhookId;
                         const previousCatchAllWebhookId = staticData.previousCatchAllWebhookId;
                         if (domainId && webhookId) {
-                            // Ownership probe: n8n also tears down the TEST registration after a
-                            // workflow is published, and test+prod share one EmailConnect webhook
-                            // (firstOrCreate by alias email). If the webhook's URL no longer
-                            // matches this registration's URL, the other registration owns it
-                            // now — tearing down here would silently break the live workflow.
                             const ownUrl = this.getNodeWebhookUrl('default');
+                            // Preferred: one atomic backend call. It re-points/cascades the
+                            // aliases and deletes the webhook in a single transaction, and
+                            // honours expectedUrl as a CAS guard: n8n also tears down the TEST
+                            // registration after a workflow is published, and test+prod share
+                            // one EmailConnect webhook (firstOrCreate by alias email) — when
+                            // the URL no longer matches, the other registration owns it now
+                            // and nothing is torn down.
+                            try {
+                                const teardownBody = { webhookId, expectedUrl: ownUrl };
+                                if (staticData.aliasMode === 'catchall') {
+                                    const restoreWebhookId = previousCatchAllWebhookId || previousWebhookId;
+                                    if (restoreWebhookId)
+                                        teardownBody.restoreWebhookId = restoreWebhookId;
+                                }
+                                const teardown = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks/alias/teardown', teardownBody);
+                                if (teardown === null || teardown === void 0 ? void 0 : teardown.success) {
+                                    if (teardown.action !== 'skipped_superseded') {
+                                        clearRegistrationState(staticData);
+                                    }
+                                    return true;
+                                }
+                            }
+                            catch (error) {
+                                // Older backend without the endpoint — fall back to the legacy
+                                // multi-call sequence below.
+                                this.logger.warn(`EmailConnect: atomic teardown unavailable, falling back: ${error}`);
+                            }
+                            // Ownership probe (legacy fallback) — same semantics as the
+                            // expectedUrl guard above, enforced client-side.
                             try {
                                 const currentWebhook = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
                                 if ((currentWebhook === null || currentWebhook === void 0 ? void 0 : currentWebhook.url) && ownUrl && currentWebhook.url !== ownUrl) {
@@ -366,12 +409,7 @@ class EmailConnectTrigger {
                             }
                             catch {
                                 // Webhook already gone — nothing to tear down; drop stale state.
-                                delete staticData.domainId;
-                                delete staticData.aliasId;
-                                delete staticData.webhookId;
-                                delete staticData.previousWebhookId;
-                                delete staticData.previousDomainWebhookId;
-                                delete staticData.previousCatchAllWebhookId;
+                                clearRegistrationState(staticData);
                                 return true;
                             }
                             // Step 1: Detach the webhook
@@ -472,12 +510,7 @@ class EmailConnectTrigger {
                                 this.logger.warn(`EmailConnect: failed to restore previous webhook: ${error}`);
                             }
                             // Clean up stored configuration
-                            delete staticData.domainId;
-                            delete staticData.aliasId;
-                            delete staticData.webhookId;
-                            delete staticData.previousWebhookId;
-                            delete staticData.previousDomainWebhookId;
-                            delete staticData.previousCatchAllWebhookId;
+                            clearRegistrationState(staticData);
                         }
                         return true;
                     }
