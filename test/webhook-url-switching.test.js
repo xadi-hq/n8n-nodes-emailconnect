@@ -60,7 +60,7 @@ describe('EmailConnect Webhook URL Switching', () => {
       mockStaticData.aliasId = 'test-alias-id';
 
       // 1. GET webhook (tryStoredWebhook) — URL differs
-      // 2. POST /api/webhooks/alias (atomic upsert: update URL + autoVerify)
+      // 2. POST /api/webhooks/alias (atomic upsert: update URL, auto-verified via trusted-source header)
       emailConnectApiRequest
         .mockResolvedValueOnce({ id: webhookId, url: productionUrl, name: 'Test Webhook', verified: true })
         .mockResolvedValueOnce({ success: true, webhook: { id: webhookId }, alias: { id: 'test-alias-id' } });
@@ -75,7 +75,6 @@ describe('EmailConnect Webhook URL Switching', () => {
           webhookUrl: testUrl,
           aliasType: 'specific',
           localPart: 'support',
-          autoVerify: true,
           webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Test)',
         }),
         {},
@@ -107,7 +106,6 @@ describe('EmailConnect Webhook URL Switching', () => {
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
         expect.objectContaining({
           webhookUrl: productionUrl,
-          autoVerify: true,
           webhookDescription: 'Auto-created webhook for n8n trigger node: Test EmailConnect Trigger (Production)',
         }),
         {},
@@ -215,7 +213,7 @@ describe('EmailConnect Webhook URL Switching', () => {
 
       // Should re-upsert via the atomic endpoint with the current (production) URL
       expect(emailConnectApiRequest).toHaveBeenNthCalledWith(2, 'POST', '/api/webhooks/alias',
-        expect.objectContaining({ webhookUrl: currentUrl, autoVerify: true }),
+        expect.objectContaining({ webhookUrl: currentUrl }),
         {},
         undefined,
         { 'X-EmailConnect-Source': 'n8n-node' },
