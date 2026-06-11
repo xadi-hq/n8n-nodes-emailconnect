@@ -413,6 +413,29 @@ export class EmailConnectTrigger implements INodeType {
 					const previousCatchAllWebhookId = staticData.previousCatchAllWebhookId as string;
 
 					if (domainId && webhookId) {
+						// Ownership probe: n8n also tears down the TEST registration after a
+						// workflow is published, and test+prod share one EmailConnect webhook
+						// (firstOrCreate by alias email). If the webhook's URL no longer
+						// matches this registration's URL, the other registration owns it
+						// now — tearing down here would silently break the live workflow.
+						const ownUrl = this.getNodeWebhookUrl('default') as string;
+						try {
+							const currentWebhook = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
+							if (currentWebhook?.url && ownUrl && currentWebhook.url !== ownUrl) {
+								// Superseded — keep static data; the live registration relies on it.
+								return true;
+							}
+						} catch {
+							// Webhook already gone — nothing to tear down; drop stale state.
+							delete staticData.domainId;
+							delete staticData.aliasId;
+							delete staticData.webhookId;
+							delete staticData.previousWebhookId;
+							delete staticData.previousDomainWebhookId;
+							delete staticData.previousCatchAllWebhookId;
+							return true;
+						}
+
 						// Step 1: Detach the webhook
 						try {
 							if (aliasId) {
