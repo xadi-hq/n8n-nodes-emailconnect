@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.2] - 2026-06-11
+
+### Fixed
+- **Test-session teardown no longer breaks a just-published workflow.** n8n deletes the test webhook registration even after publishing, and test + production share one EmailConnect webhook/alias (`firstOrCreate` by email). The trigger's `delete()` now probes ownership first: if the stored webhook's URL no longer matches this registration, it was superseded and teardown is skipped, preserving the live production registration.
+- **Webhook name/description survive the test→production URL switch.** Activation runs without the test session's static data, so the re-upsert used to rename user-named webhooks to the generated `n8n trigger (...)` fallback. Precedence is now node parameter → static data → the webhook's current values → generated.
+- **Webhook "Update" keeps the webhook verified.** The regular node's webhook update (`PUT /api/webhooks/:id`) now sends the `X-EmailConnect-Source` trusted-source header; without it the backend resets `verified` on any non-test URL change.
+
+### Changed
+- Teardown prefers a single atomic `POST /api/webhooks/alias/teardown` call (re-points/cascades aliases and deletes the webhook in one transaction, with `expectedUrl` as a CAS guard), falling back to the legacy multi-call sequence on older backends.
+- Dropped the deprecated `autoVerify` body flag from the webhook/alias upsert — the backend ignores it; the `X-EmailConnect-Source` header is the sole auto-verification mechanism.
+
+## [1.3.1] - 2026-06-10
+
+### Fixed
+- **Send `X-EmailConnect-Source: n8n-node` on the webhook/alias upsert.** The backend auto-verifies webhooks created/updated by trusted integrations based on this header; relying solely on the `autoVerify` body flag broke against deployed backends (500 on first Execute step, leaving an orphan unverified webhook and no alias).
+
 ## [1.3.0] - 2026-06-02
 
 ### Fixed

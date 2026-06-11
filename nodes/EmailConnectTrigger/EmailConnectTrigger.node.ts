@@ -12,14 +12,16 @@ import {
 import { emailConnectApiRequest, getDomainOptions } from '../EmailConnect/GenericFunctions';
 
 // Sanctioned trusted-source header: the backend auto-verifies webhooks
-// created/updated by known integrations (n8n-node, zapier, make). Sent on
-// every atomic upsert as belt-and-braces alongside the autoVerify body flag.
+// created/updated by known integrations (n8n-node, zapier, make). This header
+// is the sole auto-verification mechanism — the old autoVerify body flag is
+// deprecated and ignored server-side.
 const TRUSTED_SOURCE_HEADERS = { 'X-EmailConnect-Source': 'n8n-node' };
 
 // ---------------------------------------------------------------------------
 // Helper: build the body for the atomic POST /api/webhooks/alias upsert.
 // Shared by create() and the URL-change path so both use the one mechanism
-// that reliably (re)verifies the webhook server-side (autoVerify).
+// that reliably (re)verifies the webhook server-side (the trusted-source
+// header sent alongside this body).
 // ---------------------------------------------------------------------------
 function buildWebhookAliasBody(
 	context: IHookFunctions,
@@ -36,7 +38,6 @@ function buildWebhookAliasBody(
 		webhookDescription,
 		firstOrCreate: true,
 		updateWebhookData: true,
-		autoVerify: true,
 	};
 
 	if (aliasMode === 'catchall') {
@@ -59,9 +60,10 @@ function buildWebhookAliasBody(
 // atomic upsert so the URL is updated AND re-verified in one call.
 //
 // A plain PUT /api/webhooks/{id} resets `verified` to false for any non-test
-// URL, and the standalone /verify flow uses a server-generated token the node
-// cannot reproduce — so autoVerify via /api/webhooks/alias is the only path
-// that keeps the production webhook verified.
+// URL unless the trusted-source header is sent, and the standalone /verify
+// flow uses a server-generated token the node cannot reproduce — so the
+// trusted upsert via /api/webhooks/alias is the path that keeps the
+// production webhook verified.
 // ---------------------------------------------------------------------------
 async function updateWebhookUrlAndVerify(
 	context: IHookFunctions,

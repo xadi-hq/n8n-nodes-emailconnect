@@ -2,7 +2,8 @@
  * The X-EmailConnect-Source trusted-source header must be sent on every
  * POST /api/webhooks/alias upsert. The backend auto-verifies webhooks
  * created/updated by known integrations (n8n-node, zapier, make) based on
- * this header — belt-and-braces alongside the autoVerify body flag.
+ * this header — the sole verification mechanism now that the autoVerify
+ * body flag is deprecated and ignored server-side.
  */
 
 const { EmailConnectTrigger } = require('../dist/nodes/EmailConnectTrigger/EmailConnectTrigger.node.js');
@@ -74,7 +75,6 @@ describe('Trusted-source header on webhook/alias upsert', () => {
       expect.objectContaining({
         domainId: 'test-domain-id',
         webhookUrl,
-        autoVerify: true,
       }),
       {},
       undefined,
@@ -108,7 +108,7 @@ describe('Trusted-source header on webhook/alias upsert', () => {
       2,
       'POST',
       '/api/webhooks/alias',
-      expect.objectContaining({ webhookUrl: currentUrl, autoVerify: true }),
+      expect.objectContaining({ webhookUrl: currentUrl }),
       {},
       undefined,
       expect.objectContaining(TRUSTED_HEADERS),

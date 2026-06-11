@@ -642,7 +642,11 @@ export class EmailConnect implements INodeType {
 						const body: any = { name, url };
 						if (description) body.description = description;
 
-						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body);
+						// Trusted-source header keeps the webhook verified on URL change —
+						// without it the backend resets `verified` for any non-test URL.
+						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body, {}, undefined, {
+							'X-EmailConnect-Source': 'n8n-node',
+						});
 						returnData.push({ json: responseData });
 					} else if (operation === 'delete') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
