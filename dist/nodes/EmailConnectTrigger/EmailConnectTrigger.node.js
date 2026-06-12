@@ -135,8 +135,14 @@ async function tryStoredWebhook(context, webhookUrl) {
         // URL matches — nothing changed
         return true;
     }
-    catch {
-        // Stored webhook no longer exists
+    catch (error) {
+        // Stored webhook lookup failed — most commonly because it no longer
+        // exists. We drop the stale IDs and return false so checkExists falls
+        // through to its search/create path (create() is an idempotent upsert,
+        // so a transient failure here won't orphan or duplicate webhooks). Log a
+        // warning so the failure still surfaces in the n8n execution log.
+        context.logger.warn(`EmailConnect: stored webhook ${storedWebhookId} lookup failed during checkExists; ` +
+            `clearing stale state and re-resolving. Error: ${error.message}`);
         delete staticData.webhookId;
         delete staticData.aliasId;
         return false;
@@ -288,7 +294,15 @@ class EmailConnectTrigger {
                         }
                         return false;
                     }
-                    catch {
+                    catch (error) {
+                        // The webhook-search API call failed (network/auth/5xx). We return
+                        // false so n8n proceeds to create(), which is itself idempotent:
+                        // it reuses an existing alias/webhook rather than blindly creating a
+                        // duplicate. We log a warning so the transient failure still surfaces
+                        // in the n8n execution log for diagnosis.
+                        this.logger.warn(`EmailConnect: failed to look up existing webhooks during checkExists; ` +
+                            `assuming it does not exist and falling through to create(). ` +
+                            `Error: ${error.message}`);
                         return false;
                     }
                 },

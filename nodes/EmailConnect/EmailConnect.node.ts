@@ -531,7 +531,10 @@ export class EmailConnect implements INodeType {
 						name: `${webhook.name || webhook.url} (${webhook.id})`,
 						value: webhook.id,
 					}));
-				} catch {
+				} catch (error) {
+					// Dropdown load failed — degrade gracefully to an empty list so
+					// the UI stays usable, but surface the cause in the n8n log.
+					this.logger.warn(`EmailConnect: failed to load webhook options: ${(error as Error).message}`);
 					return [];
 				}
 			},

@@ -39,7 +39,10 @@ async function getDomainOptions() {
             value: domain.id,
         }));
     }
-    catch {
+    catch (error) {
+        // Dropdown load failed — degrade gracefully to an empty list so the UI
+        // stays usable, but surface the cause in the n8n log.
+        this.logger.warn(`EmailConnect: failed to load domain options: ${error.message}`);
         return [];
     }
 }
@@ -57,7 +60,10 @@ async function getAliasOptions() {
             value: alias.id,
         }));
     }
-    catch {
+    catch (error) {
+        // Dropdown load failed — degrade gracefully to an empty list so the UI
+        // stays usable, but surface the cause in the n8n log.
+        this.logger.warn(`EmailConnect: failed to load alias options: ${error.message}`);
         return [];
     }
 }

@@ -13,6 +13,12 @@ function makeContext(httpImpl) {
 			// The node authenticates via httpRequestWithAuthentication.
 			httpRequestWithAuthentication: jest.fn().mockImplementation(httpImpl),
 		},
+		logger: {
+			debug: jest.fn(),
+			info: jest.fn(),
+			warn: jest.fn(),
+			error: jest.fn(),
+		},
 	};
 }
 

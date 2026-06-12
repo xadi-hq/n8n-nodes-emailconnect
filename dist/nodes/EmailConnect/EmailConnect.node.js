@@ -511,7 +511,10 @@ class EmailConnect {
                             value: webhook.id,
                         }));
                     }
-                    catch {
+                    catch (error) {
+                        // Dropdown load failed — degrade gracefully to an empty list so
+                        // the UI stays usable, but surface the cause in the n8n log.
+                        this.logger.warn(`EmailConnect: failed to load webhook options: ${error.message}`);
                         return [];
                     }
                 },

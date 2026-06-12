@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.3] - 2026-06-12
+
+### Changed
+- **Failed webhook lookups during activation now surface in the n8n log.** The trigger's `checkExists` (and its `tryStoredWebhook` helper) previously swallowed webhook-search/lookup failures and silently returned "doesn't exist", which could lead n8n to call `create()` again. Both paths now log a `logger.warn` explaining the fallback. Behaviour is unchanged and safe: `create()` is an idempotent upsert (`POST /api/webhooks/alias`, `firstOrCreate` by alias email), so a transient lookup failure cannot orphan or duplicate webhooks. (Addresses n8n community-node verification feedback.)
+- **`loadOptions` dropdown failures are logged instead of silently empty.** The domain, alias, and webhook option loaders still degrade gracefully to an empty list, but now emit a `logger.warn` with the underlying cause so misconfigured credentials or API errors are diagnosable.
+
 ## [1.3.2] - 2026-06-11
 
 ### Fixed

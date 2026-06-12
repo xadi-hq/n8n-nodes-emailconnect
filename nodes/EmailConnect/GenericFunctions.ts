@@ -53,7 +53,10 @@ export async function getDomainOptions(this: ILoadOptionsFunctions): Promise<INo
 			name: `${domain.domain} (${domain.id})`,
 			value: domain.id,
 		}));
-	} catch {
+	} catch (error) {
+		// Dropdown load failed — degrade gracefully to an empty list so the UI
+		// stays usable, but surface the cause in the n8n log.
+		this.logger.warn(`EmailConnect: failed to load domain options: ${(error as Error).message}`);
 		return [];
 	}
 }
@@ -71,7 +74,10 @@ export async function getAliasOptions(this: ILoadOptionsFunctions): Promise<INod
 			name: `${alias.email} (${alias.id})`,
 			value: alias.id,
 		}));
-	} catch {
+	} catch (error) {
+		// Dropdown load failed — degrade gracefully to an empty list so the UI
+		// stays usable, but surface the cause in the n8n log.
+		this.logger.warn(`EmailConnect: failed to load alias options: ${(error as Error).message}`);
 		return [];
 	}
 }

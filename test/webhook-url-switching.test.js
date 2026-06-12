@@ -44,7 +44,13 @@ describe('EmailConnect Webhook URL Switching', () => {
       getCredentials: jest.fn().mockResolvedValue({
         apiKey: 'test-api-key',
         baseUrl: 'http://localhost:3000'
-      })
+      }),
+      logger: {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      },
     };
   });
 
