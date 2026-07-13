@@ -65,7 +65,7 @@
     "jest": "^30.4.2",
     "n8n-workflow": "^1.120.14",
     "prettier": "^3.8.3",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
     "n8n-workflow": "*"
