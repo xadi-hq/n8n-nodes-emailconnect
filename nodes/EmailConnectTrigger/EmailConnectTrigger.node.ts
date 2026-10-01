@@ -8,6 +8,8 @@ import {
 	NodeOperationError,
 	type NodeConnectionType,
 } from 'n8n-workflow';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import type { IncomingHttpHeaders } from 'http';
 
 import { emailConnectApiRequest, getDomainOptions } from '../EmailConnect/GenericFunctions';
 
@@ -16,6 +18,85 @@ import { emailConnectApiRequest, getDomainOptions } from '../EmailConnect/Generi
 // is the sole auto-verification mechanism — the old autoVerify body flag is
 // deprecated and ignored server-side.
 const TRUSTED_SOURCE_HEADERS = { 'X-EmailConnect-Source': 'n8n-node' };
+
+// ---------------------------------------------------------------------------
+// Webhook signing (Standard Webhooks, https://www.standardwebhooks.com).
+// EmailConnect signs every delivery with HMAC-SHA256 over
+// `${webhook-id}.${webhook-timestamp}.${raw body}`, keyed with the base64-decoded
+// part of a `whsec_` secret. The secret lives in the credential — shared by the
+// test and production registrations, which share one EmailConnect webhook — and
+// the node sends it with the upsert. Hand-rolled: verified community nodes may
+// not have runtime dependencies.
+// ---------------------------------------------------------------------------
+const WEBHOOK_SECRET_PATTERN = /^whsec_[A-Za-z0-9+/]+={0,2}$/;
+const SIGNATURE_TOLERANCE_SECONDS = 5 * 60;
+const ROTATION_HINT = 'If you just changed the signing secret, deactivate and reactivate the workflow.';
+
+/** The credential's signing secret, trimmed; undefined when not configured. */
+async function readWebhookSecret(context: IHookFunctions | IWebhookFunctions): Promise<string | undefined> {
+	const credentials = await context.getCredentials('emailConnectApi');
+	const secret = typeof credentials?.webhookSecret === 'string' ? credentials.webhookSecret.trim() : '';
+	return secret || undefined;
+}
+
+/**
+ * The secret to register at activation. A value outside the `whsec_` format
+ * would never verify — EmailConnect keys a non-`whsec_` secret differently — so
+ * refuse it here instead of producing a trigger that rejects every delivery.
+ */
+async function getWebhookSecretForActivation(context: IHookFunctions): Promise<string | undefined> {
+	const secret = await readWebhookSecret(context);
+	if (secret && !WEBHOOK_SECRET_PATTERN.test(secret)) {
+		throw new NodeOperationError(
+			context.getNode(),
+			'The webhook signing secret in the EmailConnect credential must be in "whsec_" + base64 format',
+			{ description: 'Generate one with: echo "whsec_$(openssl rand -base64 24)"' },
+		);
+	}
+	return secret;
+}
+
+function hashWebhookSecret(secret: string | undefined): string | undefined {
+	return secret ? createHash('sha256').update(secret, 'utf8').digest('hex') : undefined;
+}
+
+function firstHeader(value: string | string[] | undefined): string | undefined {
+	return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * Verify a Standard Webhooks signature against the exact bytes received.
+ * `webhook-signature` may list several space-separated `v1,<base64>` entries
+ * (secret rotation); any one matching is enough.
+ */
+export function verifyWebhookSignature(
+	secret: string,
+	headers: IncomingHttpHeaders,
+	rawBody: Buffer | undefined,
+	nowSeconds: number = Math.floor(Date.now() / 1000),
+): boolean {
+	if (!WEBHOOK_SECRET_PATTERN.test(secret) || !rawBody) return false;
+
+	const id = firstHeader(headers['webhook-id']);
+	const timestamp = firstHeader(headers['webhook-timestamp']);
+	const signatures = firstHeader(headers['webhook-signature']);
+	if (!id || !timestamp || !signatures || !/^\d+$/.test(timestamp)) return false;
+	if (Math.abs(nowSeconds - Number(timestamp)) > SIGNATURE_TOLERANCE_SECONDS) return false;
+
+	// HMAC over the raw bytes, never a re-serialisation of the parsed body: key
+	// order and non-ASCII escaping would differ from what was signed.
+	const expected = createHmac('sha256', Buffer.from(secret.slice('whsec_'.length), 'base64'))
+		.update(`${id}.${timestamp}.`, 'utf8')
+		.update(rawBody)
+		.digest();
+
+	return signatures.split(' ').some((entry) => {
+		if (!entry.startsWith('v1,')) return false;
+		const candidate = Buffer.from(entry.slice('v1,'.length), 'base64');
+		// timingSafeEqual throws on a length mismatch.
+		return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+	});
+}
 
 // ---------------------------------------------------------------------------
 // Helper: build the body for the atomic POST /api/webhooks/alias upsert.
@@ -28,6 +109,7 @@ function buildWebhookAliasBody(
 	webhookUrl: string | undefined,
 	webhookName: string,
 	webhookDescription: string,
+	webhookSecret: string | undefined,
 ): IDataObject {
 	const aliasMode = context.getNodeParameter('aliasMode') as string;
 
@@ -39,6 +121,10 @@ function buildWebhookAliasBody(
 		firstOrCreate: true,
 		updateWebhookData: true,
 	};
+
+	// Only the client-supplied secret, never `generateSecret`: the app returns a
+	// generated plaintext only on creation, so on an update it would be lost.
+	if (webhookSecret) body.webhookSecret = webhookSecret;
 
 	if (aliasMode === 'catchall') {
 		body.aliasType = 'catchall';
@@ -53,6 +139,46 @@ function buildWebhookAliasBody(
 	}
 
 	return body;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: run the atomic POST /api/webhooks/alias upsert. With a signing secret
+// configured, turn a plan rejection into an actionable error, and refuse a
+// webhook the backend reports as unsigned — the trigger would reject every
+// delivery to it.
+// ---------------------------------------------------------------------------
+async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): Promise<any> {
+	let result;
+	try {
+		result = await emailConnectApiRequest.call(
+			context,
+			'POST',
+			'/api/webhooks/alias',
+			body,
+			{},
+			undefined,
+			TRUSTED_SOURCE_HEADERS,
+		);
+	} catch (error) {
+		if (body.webhookSecret && String((error as { httpCode?: unknown }).httpCode) === '402') {
+			throw new NodeOperationError(
+				context.getNode(),
+				'Webhook signing requires an EmailConnect Maker plan or higher',
+				{ description: 'Upgrade your plan, or clear the Webhook Signing Secret in the EmailConnect credential.' },
+			);
+		}
+		throw error;
+	}
+
+	if (body.webhookSecret && result?.webhook?.hasSecret === false) {
+		throw new NodeOperationError(
+			context.getNode(),
+			'EmailConnect did not store the webhook signing secret',
+			{ description: 'The trigger would reject every delivery. Clear the Webhook Signing Secret in the credential, or contact EmailConnect support.' },
+		);
+	}
+
+	return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,19 +210,19 @@ async function updateWebhookUrlAndVerify(
 		|| existing?.description
 		|| `Auto-created webhook for n8n trigger node: ${context.getNode().name} (${isTestUrl ? 'Test' : 'Production'})`;
 
-	const body = buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescription);
-	const result = await emailConnectApiRequest.call(
-		context,
-		'POST',
-		'/api/webhooks/alias',
-		body,
-		{},
-		undefined,
-		TRUSTED_SOURCE_HEADERS,
-	);
+	const webhookSecret = await getWebhookSecretForActivation(context);
+	const body = buildWebhookAliasBody(context, webhookUrl, webhookName, webhookDescription, webhookSecret);
+	const result = await upsertWebhookAlias(context, body);
 
 	if (result?.webhook?.id) staticData.webhookId = result.webhook.id;
 	if (result?.alias?.id) staticData.aliasId = result.alias.id;
+	setStoredSecretHash(staticData, webhookSecret);
+}
+
+function setStoredSecretHash(staticData: IDataObject, webhookSecret: string | undefined): void {
+	const hash = hashWebhookSecret(webhookSecret);
+	if (hash) staticData.webhookSecretHash = hash;
+	else delete staticData.webhookSecretHash;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,13 +235,17 @@ function clearRegistrationState(staticData: IDataObject): void {
 	delete staticData.previousWebhookId;
 	delete staticData.previousDomainWebhookId;
 	delete staticData.previousCatchAllWebhookId;
+	delete staticData.webhookSecretHash;
 }
 
 // ---------------------------------------------------------------------------
-// Helper: detect whether alias/domain config changed since last save.
-// Returns true if the caller should force recreation.
+// Helper: detect whether alias/domain config — or the credential's signing
+// secret — changed since last save. Returns true if the caller should force
+// recreation. Without the secret check, adding or rotating a secret on an
+// existing trigger would be a silent no-op: checkExists would keep reporting
+// the stored webhook as current and create() would never run.
 // ---------------------------------------------------------------------------
-function detectConfigChange(context: IHookFunctions): boolean {
+async function detectConfigChange(context: IHookFunctions): Promise<boolean> {
 	const staticData = context.getWorkflowStaticData('node');
 	const storedWebhookId = staticData.webhookId as string;
 	const storedAliasMode = staticData.aliasMode as string;
@@ -136,10 +266,16 @@ function detectConfigChange(context: IHookFunctions): boolean {
 	const storedDomainId = staticData.domainId as string;
 	const storedAliasLocalPart = (staticData.aliasLocalPart as string) || '';
 
+	// Undefined on both sides is "no change": every trigger registered before
+	// signing existed has no stored hash, and must not force-recreate on upgrade.
+	const currentSecretHash = hashWebhookSecret(await getWebhookSecretForActivation(context));
+	const storedSecretHash = staticData.webhookSecretHash as string | undefined;
+
 	const changed =
 		(storedAliasMode && storedAliasMode !== currentAliasMode) ||
 		(storedDomainId && storedDomainId !== currentDomainId) ||
-		(storedAliasLocalPart && storedAliasLocalPart !== currentAliasLocalPart);
+		(storedAliasLocalPart && storedAliasLocalPart !== currentAliasLocalPart) ||
+		(storedSecretHash ?? '') !== (currentSecretHash ?? '');
 
 	if (changed) {
 		delete staticData.webhookId;
@@ -147,6 +283,7 @@ function detectConfigChange(context: IHookFunctions): boolean {
 		delete staticData.aliasMode;
 		delete staticData.domainId;
 		delete staticData.aliasLocalPart;
+		delete staticData.webhookSecretHash;
 	}
 
 	return !!changed;
@@ -169,8 +306,11 @@ async function tryStoredWebhook(
 	try {
 		const webhook = await emailConnectApiRequest.call(context, 'GET', `/api/webhooks/${storedWebhookId}`);
 
-		if (webhook.url !== webhookUrl) {
-			// URL changed (e.g. test↔prod) — re-upsert to update URL & re-verify
+		if (webhook.url !== webhookUrl || (staticData.webhookSecretHash && webhook.hasSecret === false)) {
+			// URL changed (e.g. test↔prod) — re-upsert to update URL & re-verify.
+			// Also re-upsert when a secret is configured but the webhook carries
+			// none (signing removed in the app): the hash only sees credential-side
+			// changes, and this trigger would otherwise reject every delivery.
 			await updateWebhookUrlAndVerify(context, webhookUrl, webhook);
 			return true;
 		}
@@ -314,7 +454,7 @@ export class EmailConnectTrigger implements INodeType {
 				const webhookUrl = this.getNodeWebhookUrl('default') as string;
 
 				// 1. Config change → force recreation
-				if (detectConfigChange(this)) return false;
+				if (await detectConfigChange(this)) return false;
 
 				// 2. Try the stored webhook ID
 				const storedResult = await tryStoredWebhook(this, webhookUrl);
@@ -329,6 +469,9 @@ export class EmailConnectTrigger implements INodeType {
 					const exactMatch = webhooks.find((wh: any) => wh.url === webhookUrl);
 					if (exactMatch) {
 						this.getWorkflowStaticData('node').webhookId = exactMatch.id;
+						// Adopting a webhook found by URL skips create(), so a configured
+						// secret is registered only if the webhook already carries one.
+						if (await readWebhookSecret(this)) return false;
 						return true;
 					}
 
@@ -371,6 +514,9 @@ export class EmailConnectTrigger implements INodeType {
 				const webhookDescription = this.getNodeParameter('webhookDescription') as string;
 
 				try {
+					// Validate the signing secret before touching the API.
+					const webhookSecret = await getWebhookSecretForActivation(this);
+
 					// Fetch the domain (for name + previousWebhookId restoration) and,
 					// only in catch-all mode, the existing aliases (to restore the
 					// previous catch-all webhook on delete) — concurrently.
@@ -405,16 +551,14 @@ export class EmailConnectTrigger implements INodeType {
 					}
 
 					// Atomic upsert: creates/updates webhook + alias and auto-verifies.
-					const webhookAliasData = buildWebhookAliasBody(this, webhookUrl, webhookName, webhookDescription);
-					const result = await emailConnectApiRequest.call(
+					const webhookAliasData = buildWebhookAliasBody(
 						this,
-						'POST',
-						'/api/webhooks/alias',
-						webhookAliasData,
-						{},
-						undefined,
-						TRUSTED_SOURCE_HEADERS,
+						webhookUrl,
+						webhookName,
+						webhookDescription,
+						webhookSecret,
 					);
+					const result = await upsertWebhookAlias(this, webhookAliasData);
 
 					if (!result.success) {
 						throw new NodeOperationError(this.getNode(), `Failed to create/update webhook and alias: ${result.message || 'Unknown error'}`);
@@ -433,9 +577,12 @@ export class EmailConnectTrigger implements INodeType {
 					if (aliasMode === 'specific') {
 						staticData.aliasLocalPart = this.getNodeParameter('aliasLocalPart') as string;
 					}
+					setStoredSecretHash(staticData, webhookSecret);
 
 					return true;
 				} catch (error) {
+					// Our own errors already say what to do — don't bury them in a prefix.
+					if (error instanceof NodeOperationError) throw error;
 					throw new NodeOperationError(this.getNode(), `Failed to configure webhook endpoint: ${error}`);
 				}
 			},
@@ -605,6 +752,23 @@ export class EmailConnectTrigger implements INodeType {
 	};
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+		// With a signing secret configured, every request must carry a valid
+		// signature — checked first, so not even the no-body branch below can
+		// start a run unsigned. Fail closed. `noWebhookResponse` tells n8n to send
+		// nothing, so end the response here or the sender hangs until it times out.
+		const webhookSecret = await readWebhookSecret(this);
+		if (webhookSecret) {
+			const request = this.getRequestObject();
+			if (!verifyWebhookSignature(webhookSecret, request.headers, request.rawBody)) {
+				this.logger.warn(
+					`EmailConnect: rejected a request with a missing or invalid webhook signature` +
+						`${request.rawBody ? '' : ' (n8n provided no raw request body to verify)'}. ${ROTATION_HINT}`,
+				);
+				this.getResponseObject().status(401).json({ error: 'Invalid webhook signature' });
+				return { noWebhookResponse: true };
+			}
+		}
+
 		const bodyData = this.getBodyData();
 
 		// No / invalid body — typically the n8n "listen for test event" probe.

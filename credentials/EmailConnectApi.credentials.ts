@@ -36,6 +36,16 @@ export class EmailConnectApi implements ICredentialType {
 			description: 'Your EmailConnect API key from <a href="https://app.emailconnect.eu/settings/api-keys" target="_blank">account settings</a>. The key starts with "ec_" and is used to authenticate all API requests.',
 			required: true,
 		},
+		{
+			displayName: 'Webhook Signing Secret',
+			name: 'webhookSecret',
+			type: 'string',
+			typeOptions: { password: true },
+			default: '',
+			placeholder: 'whsec_...',
+			hint: 'Optional. Requires a Maker plan or higher. Leave empty to accept unsigned deliveries.',
+			description: 'When set, the EmailConnect Trigger rejects any request without a valid EmailConnect signature (Standard Webhooks, HMAC-SHA256). Use a secret in "whsec_" + base64 format — generate one with <code>echo "whsec_$(openssl rand -base64 24)"</code>. The trigger registers it on its webhook when the workflow is activated; after changing it, deactivate and reactivate the workflow. With a secret set, hand-made test requests (e.g. curl) are rejected — send a real email instead.',
+		},
 	];
 
 	// Use generic authentication

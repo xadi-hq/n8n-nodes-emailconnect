@@ -47,6 +47,20 @@ Before using the nodes, you need to configure your EmailConnect API credentials:
 2. Click **Create New Credential**
 3. Search for **EmailConnect API**
 4. Enter your EmailConnect API key (get it from [EmailConnect Dashboard](https://app.emailconnect.eu/settings))
+5. Optional: enter a **Webhook Signing Secret** (see below)
+
+#### Webhook signature verification (optional, Maker plan or higher)
+
+EmailConnect signs every delivery with HMAC-SHA256 using the [Standard Webhooks](https://www.standardwebhooks.com) scheme. With a **Webhook Signing Secret** in the credential, the EmailConnect Trigger registers that secret on its webhook and rejects (HTTP 401) any request without a valid signature, or with a timestamp more than 5 minutes off. Without one, the trigger accepts every request to its URL, as before.
+
+1. Generate a secret in `whsec_` + base64 format:
+   ```bash
+   echo "whsec_$(openssl rand -base64 24)"
+   ```
+2. Paste it into the credential's **Webhook Signing Secret** field.
+3. Activate the workflow — or, for a workflow that is already active, deactivate and reactivate it. The trigger registers the secret on activation.
+
+To rotate, change the secret in the credential and deactivate/reactivate every workflow that uses it. With a secret set, hand-made test requests (e.g. `curl`) are rejected; send a real email to the alias to test.
 
 ### 2. EmailConnect Service Setup
 
@@ -262,6 +276,13 @@ This n8n node requires an EmailConnect API key with **"API User"** scope, which 
 - Verify the webhook URL is accessible from EmailConnect servers
 - Check that the webhook is properly configured in EmailConnect dashboard
 - Ensure your n8n instance can receive external HTTP requests
+
+**Trigger returns 401 "Invalid webhook signature"**
+- The secret EmailConnect signs with no longer matches the one in the credential. If you changed the secret, deactivate and reactivate the workflow.
+- The request was not sent by EmailConnect, or was sent by hand — expected when a signing secret is set.
+
+**"Webhook signing requires an EmailConnect Maker plan or higher" on activation**
+- Signature verification needs a Maker plan or higher. Upgrade, or clear the Webhook Signing Secret in the credential.
 
 **"Insufficient permissions" Error**
 - Your API key may not have the required scope
