@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0] - 2026-10-01
+## [1.4.0] - 2026-10-14
 
 ### Added
 - **Webhook signature verification.** An optional **Webhook Signing Secret** (`whsec_` + base64) in the EmailConnect API credential makes the EmailConnect Trigger verify the HMAC-SHA256 [Standard Webhooks](https://www.standardwebhooks.com) signature EmailConnect puts on every delivery. Requests with a missing or invalid signature, or a timestamp more than 5 minutes off, are rejected with HTTP 401 — including empty-body requests, which previously started a run with a synthetic test item. Verification runs over the raw request bytes, and any of several space-separated `v1` signatures may match, so a future key-rotation overlap needs no node update. No new runtime dependencies.
