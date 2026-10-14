@@ -145,7 +145,8 @@ async function upsertWebhookAlias(context, body) {
 async function updateWebhookUrlAndVerify(context, webhookUrl, existing) {
     var _a, _b;
     const staticData = context.getWorkflowStaticData('node');
-    const isTestUrl = (webhookUrl !== null && webhookUrl !== void 0 ? webhookUrl : '').includes('/webhook-test/');
+    const isTestUrl = isTestWebhookUrl(webhookUrl);
+    await rememberReplacedRegistration(context, webhookUrl, existing === null || existing === void 0 ? void 0 : existing.url);
     // The upsert (updateWebhookData) overwrites name/description, and static
     // data from the test session is not available at activation — so prefer
     // the node parameter, then static data, then whatever the webhook already
@@ -166,6 +167,44 @@ async function updateWebhookUrlAndVerify(context, webhookUrl, existing) {
         staticData.aliasId = result.alias.id;
     setStoredSecretHash(staticData, webhookSecret);
 }
+function isTestWebhookUrl(url) {
+    return (url !== null && url !== void 0 ? url : '').includes('/webhook-test/');
+}
+// ---------------------------------------------------------------------------
+// Helper: before re-pointing an existing webhook at this registration's URL,
+// remember where it pointed (and whether its alias was switched off), so
+// delete() can hand it back instead of tearing it down.
+//
+// The case this exists for: "listen for test event" on an ACTIVE workflow.
+// Test and production share one EmailConnect webhook, so the test session
+// re-points it at the test URL; tearing it down when the session ends deleted
+// the production alias with it (cascade). Only the first URL is kept, so
+// repeated re-points within one registration restore the original.
+//
+// A production registration never records a /webhook-test/ URL: that is a
+// stale test session, and "restoring" it on deactivation would point the
+// webhook at a URL nothing listens on.
+// ---------------------------------------------------------------------------
+async function rememberReplacedRegistration(context, webhookUrl, previousUrl) {
+    const staticData = context.getWorkflowStaticData('node');
+    if (!previousUrl || previousUrl === webhookUrl || staticData.restoreUrl)
+        return;
+    if (!isTestWebhookUrl(webhookUrl) && isTestWebhookUrl(previousUrl))
+        return;
+    staticData.restoreUrl = previousUrl;
+    // The upsert switches an inactive alias back on; a hand-back must switch it off again.
+    const aliasId = staticData.aliasId;
+    if (aliasId && staticData.aliasMode !== 'catchall') {
+        try {
+            const alias = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
+            if ((alias === null || alias === void 0 ? void 0 : alias.active) === false)
+                staticData.restoreAliasInactive = true;
+        }
+        catch (error) {
+            context.logger.warn(`EmailConnect: could not read alias ${aliasId} before re-pointing it: ${error.message}`);
+        }
+    }
+}
 function setStoredSecretHash(staticData, webhookSecret) {
     const hash = hashWebhookSecret(webhookSecret);
     if (hash)
@@ -184,6 +223,10 @@ function clearRegistrationState(staticData) {
     delete staticData.previousDomainWebhookId;
     delete staticData.previousCatchAllWebhookId;
     delete staticData.webhookSecretHash;
+    delete staticData.restoreUrl;
+    delete staticData.restoreAliasInactive;
+    delete staticData.aliasCreated;
+    delete staticData.createdUrl;
 }
 // ---------------------------------------------------------------------------
 // Helper: detect whether alias/domain config — or the credential's signing
@@ -224,13 +267,19 @@ async function detectConfigChange(context) {
         delete staticData.domainId;
         delete staticData.aliasLocalPart;
         delete staticData.webhookSecretHash;
+        delete staticData.restoreUrl;
+        delete staticData.restoreAliasInactive;
+        delete staticData.aliasCreated;
+        delete staticData.createdUrl;
     }
     return !!changed;
 }
 // ---------------------------------------------------------------------------
 // Helper: try to reuse the stored webhook ID.
 //  - Returns true   → webhook exists & URL matches (or was updated)
-//  - Returns false  → stored webhook gone, static data cleaned up
+//  - Returns false  → stored webhook gone (static data cleaned up), or its
+//                     alias was switched off by a deactivation (ids kept), so
+//                     create() runs and its upsert switches the alias back on
 //  - Returns undefined → no stored webhook ID
 // ---------------------------------------------------------------------------
 async function tryStoredWebhook(context, webhookUrl) {
@@ -248,7 +297,10 @@ async function tryStoredWebhook(context, webhookUrl) {
             await updateWebhookUrlAndVerify(context, webhookUrl, webhook);
             return true;
         }
-        // URL matches — nothing changed
+        // URL matches. A deactivated workflow switched its alias off (see
+        // handBackRegistration); have create() switch it back on.
+        if (await storedAliasInactive(context))
+            return false;
         return true;
     }
     catch (error) {
@@ -263,6 +315,89 @@ async function tryStoredWebhook(context, webhookUrl) {
         delete staticData.aliasId;
         return false;
     }
+}
+// ---------------------------------------------------------------------------
+// Helper: is the stored (specific) alias switched off? Errors read as "no", so
+// a lookup failure never blocks activation.
+// ---------------------------------------------------------------------------
+async function storedAliasInactive(context) {
+    const staticData = context.getWorkflowStaticData('node');
+    const aliasId = staticData.aliasId;
+    if (!aliasId || staticData.aliasMode === 'catchall')
+        return false;
+    try {
+        const alias = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
+        return (alias === null || alias === void 0 ? void 0 : alias.active) === false;
+    }
+    catch {
+        return false;
+    }
+}
+function isNotFoundError(error) {
+    var _a;
+    const e = error;
+    return String(e === null || e === void 0 ? void 0 : e.httpCode) === '404' || /\b404\b/.test(String((_a = e === null || e === void 0 ? void 0 : e.message) !== null && _a !== void 0 ? _a : ''));
+}
+// ---------------------------------------------------------------------------
+// Helper: release a registration without deleting anything that is not ours.
+// Returns true when handled; false when the caller should tear down (an alias
+// this registration created, or catch-all mode, whose teardown re-points the
+// catch-all to its previous webhook).
+//
+//  1. A webhook this registration re-pointed is pointed back (restoreUrl).
+//  2. A test session that did not run create() for its own URL hands the
+//     webhook to the workflow's production URL. n8n is expected to keep a test
+//     session's static data until it ends; if it ever does not, this keeps
+//     the incident (a deleted production alias) from coming back.
+//  3. A specific alias the trigger did not create, or cannot tell (every
+//     registration from before 1.4.1), is switched off, not deleted: the alias
+//     and its settings stay, mail to it is rejected as alias_inactive, and
+//     reactivating the workflow switches it back on.
+// Every write is guarded by the webhook still pointing at this registration's
+// URL; otherwise another registration owns it and nothing changes.
+// ---------------------------------------------------------------------------
+async function handBackRegistration(context, staticData, ownUrl) {
+    const createdHere = staticData.createdUrl === ownUrl;
+    const ownsAlias = createdHere && staticData.aliasCreated === true;
+    const catchAll = staticData.aliasMode === 'catchall';
+    let restoreUrl = staticData.restoreUrl;
+    if (!restoreUrl && !createdHere && isTestWebhookUrl(ownUrl)) {
+        restoreUrl = ownUrl.replace('/webhook-test/', '/webhook/');
+    }
+    const deactivate = !restoreUrl && !ownsAlias && !catchAll;
+    if (!restoreUrl && !deactivate)
+        return false;
+    const webhookId = staticData.webhookId;
+    let webhook;
+    try {
+        webhook = await GenericFunctions_1.emailConnectApiRequest.call(context, 'GET', `/api/webhooks/${webhookId}`);
+    }
+    catch (error) {
+        if (isNotFoundError(error)) {
+            clearRegistrationState(staticData);
+        }
+        else {
+            context.logger.warn(`EmailConnect: could not read webhook ${webhookId} during cleanup; left unchanged: ${error.message}`);
+        }
+        return true;
+    }
+    // Superseded: keep static data, the live registration relies on it.
+    if ((webhook === null || webhook === void 0 ? void 0 : webhook.url) !== ownUrl)
+        return true;
+    const aliasId = staticData.aliasId;
+    if (restoreUrl) {
+        await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/webhooks/${webhookId}`, { name: webhook.name, url: restoreUrl }, {}, undefined, TRUSTED_SOURCE_HEADERS);
+        if (staticData.restoreAliasInactive && aliasId) {
+            await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}`, { active: false });
+        }
+        clearRegistrationState(staticData);
+        return true;
+    }
+    // Keep the ids: the next activation finds the alias switched off and re-runs create().
+    if (aliasId) {
+        await GenericFunctions_1.emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}`, { active: false });
+    }
+    return true;
 }
 // ===========================================================================
 class EmailConnectTrigger {
@@ -488,6 +623,14 @@ class EmailConnectTrigger {
                         if (aliasMode === 'specific') {
                             staticData.aliasLocalPart = this.getNodeParameter('aliasLocalPart');
                         }
+                        // Only an alias this registration created may be deleted on teardown.
+                        // Any other action means it existed before (made by hand, by another
+                        // workflow, or by an earlier registration of this one).
+                        staticData.aliasCreated = result.action === 'created';
+                        // Ownership holds for the URL create() registered, nothing else: a
+                        // test session starts from a copy of the production static data,
+                        // and must not inherit production's right to delete.
+                        staticData.createdUrl = webhookUrl;
                         setStoredSecretHash(staticData, webhookSecret);
                         return true;
                     }
@@ -513,6 +656,8 @@ class EmailConnectTrigger {
                         const previousCatchAllWebhookId = staticData.previousCatchAllWebhookId;
                         if (domainId && webhookId) {
                             const ownUrl = this.getNodeWebhookUrl('default');
+                            if (await handBackRegistration(this, staticData, ownUrl))
+                                return true;
                             // Preferred: one atomic backend call. It re-points/cascades the
                             // aliases and deletes the webhook in a single transaction, and
                             // honours expectedUrl as a CAS guard: n8n also tears down the TEST

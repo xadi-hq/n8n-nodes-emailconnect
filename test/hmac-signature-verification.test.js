@@ -363,10 +363,13 @@ describe('Activation with a signing secret', () => {
 
   test('checkExists() keeps the trigger when the secret is unchanged', async () => {
     Object.assign(staticData, { webhookId: 'wh-1', aliasId: 'al-1', webhookSecretHash: sha256(SECRET) });
-    emailConnectApiRequest.mockResolvedValueOnce({ id: 'wh-1', url: productionUrl, hasSecret: true });
+    emailConnectApiRequest
+      .mockResolvedValueOnce({ id: 'wh-1', url: productionUrl, hasSecret: true })
+      .mockResolvedValueOnce({ id: 'al-1', active: true });
 
     expect(await triggerNode.webhookMethods.default.checkExists.call(context)).toBe(true);
-    expect(emailConnectApiRequest).toHaveBeenCalledTimes(1);
+    // GET webhook + GET alias (still switched on), no upsert
+    expect(emailConnectApiRequest).toHaveBeenCalledTimes(2);
   });
 
   test('checkExists() re-registers the secret when the webhook lost it in the app', async () => {
