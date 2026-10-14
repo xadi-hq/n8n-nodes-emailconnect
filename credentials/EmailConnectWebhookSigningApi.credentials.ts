@@ -11,6 +11,8 @@ import { ICredentialType, INodeProperties } from 'n8n-workflow';
 export class EmailConnectWebhookSigningApi implements ICredentialType {
 	name = 'emailConnectWebhookSigningApi';
 	displayName = 'EmailConnect Webhook Signing API';
+	// Relative to the compiled file too: gulp copies node icons to dist/nodes.
+	icon = 'file:../nodes/EmailConnect/emailconnect.svg' as const;
 	documentationUrl = 'https://emailconnect.eu/docs/';
 	properties: INodeProperties[] = [
 		{

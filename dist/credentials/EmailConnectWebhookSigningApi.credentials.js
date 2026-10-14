@@ -13,6 +13,8 @@ class EmailConnectWebhookSigningApi {
     constructor() {
         this.name = 'emailConnectWebhookSigningApi';
         this.displayName = 'EmailConnect Webhook Signing API';
+        // Relative to the compiled file too: gulp copies node icons to dist/nodes.
+        this.icon = 'file:../nodes/EmailConnect/emailconnect.svg';
         this.documentationUrl = 'https://emailconnect.eu/docs/';
         this.properties = [
             {

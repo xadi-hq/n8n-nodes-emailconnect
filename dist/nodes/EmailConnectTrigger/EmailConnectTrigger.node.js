@@ -134,7 +134,8 @@ async function upsertWebhookAlias(context, body) {
         if (body.webhookSecret && String(error.httpCode) === '402') {
             throw new n8n_workflow_1.NodeOperationError(context.getNode(), 'Webhook signing requires an EmailConnect Maker plan or higher', { description: 'Upgrade your plan, or turn off Verify Signatures on the trigger.' });
         }
-        throw error;
+        // emailConnectApiRequest throws NodeApiError, which this returns unchanged.
+        throw new n8n_workflow_1.NodeApiError(context.getNode(), error);
     }
     if (body.webhookSecret && ((_a = result === null || result === void 0 ? void 0 : result.webhook) === null || _a === void 0 ? void 0 : _a.hasSecret) === false) {
         throw new n8n_workflow_1.NodeOperationError(context.getNode(), 'EmailConnect did not store the webhook signing secret', { description: 'The trigger would reject every delivery. Turn off Verify Signatures on the trigger, or contact EmailConnect support.' });
@@ -417,6 +418,7 @@ class EmailConnectTrigger {
             icon: 'file:emailconnect.svg',
             group: ['trigger'],
             version: 1,
+            subtitle: '={{$parameter["aliasMode"] === "catchall" ? "Domain catch-all" : "Alias: " + $parameter["aliasLocalPart"]}}',
             description: 'Trigger workflows when emails are received via EmailConnect - 100% EU-operated email service with multi-alias support',
             defaults: {
                 name: 'EmailConnect Trigger',
@@ -429,8 +431,10 @@ class EmailConnectTrigger {
                     required: true,
                 },
                 {
-                    name: SIGNING_CREDENTIAL,
+                    // A literal, not SIGNING_CREDENTIAL: n8n's lint reads testedBy from it.
+                    name: 'emailConnectWebhookSigningApi',
                     required: true,
+                    testedBy: 'emailConnectWebhookSigningApiTest',
                     displayOptions: {
                         show: {
                             verifySignatures: [true],
@@ -448,7 +452,7 @@ class EmailConnectTrigger {
             ],
             properties: [
                 {
-                    displayName: '🇪🇺 Welcome to EmailConnect',
+                    displayName: 'Welcome to EmailConnect',
                     name: 'gettingStarted',
                     type: 'notice',
                     default: '',
@@ -531,6 +535,21 @@ class EmailConnectTrigger {
         this.methods = {
             loadOptions: {
                 getDomains: GenericFunctions_1.getDomainOptions,
+            },
+            credentialTest: {
+                // No API call: the secret is only ever sent in the alias upsert, so
+                // the one thing to check up front is the format EmailConnect needs.
+                async emailConnectWebhookSigningApiTest(credential) {
+                    var _a;
+                    const secret = typeof ((_a = credential.data) === null || _a === void 0 ? void 0 : _a.secret) === 'string' ? credential.data.secret.trim() : '';
+                    if (!WEBHOOK_SECRET_PATTERN.test(secret)) {
+                        return {
+                            status: 'Error',
+                            message: 'The signing secret must be in "whsec_" + base64 format. Generate one with: echo "whsec_$(openssl rand -base64 24)"',
+                        };
+                    }
+                    return { status: 'OK', message: 'Signing secret format is valid' };
+                },
             },
         };
         this.webhookMethods = {
@@ -660,10 +679,11 @@ class EmailConnectTrigger {
                         return true;
                     }
                     catch (error) {
-                        // Our own errors already say what to do — don't bury them in a prefix.
-                        if (error instanceof n8n_workflow_1.NodeOperationError)
-                            throw error;
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to configure webhook endpoint: ${error}`);
+                        // Our own errors already say what to do: NodeOperationError returns
+                        // one of its own unchanged, so only other errors get the prefix.
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), error, {
+                            message: `Failed to configure webhook endpoint: ${error.message}`,
+                        });
                     }
                 },
                 // ------------------------------------------------------------------
@@ -740,8 +760,9 @@ class EmailConnectTrigger {
                                                 });
                                             }
                                         }
-                                        catch {
-                                            // non-critical
+                                        catch (error) {
+                                            // Non-critical: the main detach/restore above already ran.
+                                            this.logger.debug(`EmailConnect: could not detach the domain catch-all webhook: ${error}`);
                                         }
                                     }
                                 }
@@ -761,8 +782,9 @@ class EmailConnectTrigger {
                                                 });
                                             }
                                         }
-                                        catch {
-                                            // non-critical
+                                        catch (error) {
+                                            // Non-critical: the main detach/restore above already ran.
+                                            this.logger.debug(`EmailConnect: could not detach the catch-all alias webhook: ${error}`);
                                         }
                                     }
                                 }
@@ -792,8 +814,9 @@ class EmailConnectTrigger {
                                                 });
                                             }
                                         }
-                                        catch {
-                                            // non-critical
+                                        catch (error) {
+                                            // Non-critical: the main detach/restore above already ran.
+                                            this.logger.debug(`EmailConnect: could not restore the domain catch-all webhook: ${error}`);
                                         }
                                     }
                                 }
@@ -812,8 +835,9 @@ class EmailConnectTrigger {
                                                 });
                                             }
                                         }
-                                        catch {
-                                            // non-critical
+                                        catch (error) {
+                                            // Non-critical: the main detach/restore above already ran.
+                                            this.logger.debug(`EmailConnect: could not restore the catch-all alias webhook: ${error}`);
                                         }
                                     }
                                 }

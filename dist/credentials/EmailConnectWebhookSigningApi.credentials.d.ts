@@ -10,6 +10,7 @@ import { ICredentialType, INodeProperties } from 'n8n-workflow';
 export declare class EmailConnectWebhookSigningApi implements ICredentialType {
     name: string;
     displayName: string;
+    icon: "file:../nodes/EmailConnect/emailconnect.svg";
     documentationUrl: string;
     properties: INodeProperties[];
 }

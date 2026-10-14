@@ -319,6 +319,16 @@ npm run build
 npm test
 ```
 
+### Linting
+
+```bash
+npm run lint       # eslint-plugin-n8n-nodes-base rules
+npm run lint:n8n   # the rules n8n's community-package scanner enforces for verification
+npm run hooks:install   # once per clone: run both before every git push
+```
+
+`lint:n8n` runs the lint step of `npx @n8n/scan-community-package` against your working tree instead of the published package. Its pinned dependencies live in `tools/n8n-scan` and install on first run.
+
 ### Contributing
 
 1. Fork the repository

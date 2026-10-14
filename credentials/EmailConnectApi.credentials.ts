@@ -8,11 +8,13 @@ import {
 export class EmailConnectApi implements ICredentialType {
 	name = 'emailConnectApi';
 	displayName = 'EmailConnect API';
+	// Relative to the compiled file too: gulp copies node icons to dist/nodes.
+	icon = 'file:../nodes/EmailConnect/emailconnect.svg' as const;
 	documentationUrl = 'https://emailconnect.eu/docs/';
 	properties: INodeProperties[] = [
 		{
 			displayName: 'Need an API Key?',
-			name: 'apiKeyHelp',
+			name: 'gettingStarted',
 			type: 'notice',
 			default: '',
 			typeOptions: {
