@@ -412,18 +412,29 @@ describe('Activation with a signing secret', () => {
     expect(upsertBody()).not.toHaveProperty('webhookSecret');
   });
 
-  test('a secret left on the account credential by 1.4.0 is ignored', async () => {
+  test('activation refuses while a 1.4.0 secret is left on the account credential', async () => {
     context.getNodeParameter.mockImplementation((param) => ({
       aliasMode: 'specific', domainId: 'test-domain-id', aliasLocalPart: 'support', verifySignatures: false,
     })[param] || '');
     context.getCredentials.mockImplementation(async (name) =>
       name === 'emailConnectApi' ? { apiKey: 'test-api-key', webhookSecret: SECRET } : undefined);
+
+    await expect(triggerNode.webhookMethods.default.create.call(context)).rejects.toThrow(
+      'The webhook signing secret has moved from the EmailConnect API credential to the trigger',
+    );
+    await expect(triggerNode.webhookMethods.default.checkExists.call(context)).rejects.toThrow(/has moved/);
+    expect(emailConnectApiRequest).not.toHaveBeenCalled();
+  });
+
+  test('with Verify Signatures on, the trigger secret wins over a leftover account value', async () => {
+    context.getCredentials.mockImplementation(async (name) =>
+      name === 'emailConnectApi' ? { apiKey: 'test-api-key', webhookSecret: 'whsec_bGVmdG92ZXI=' } : { secret: SECRET });
     emailConnectApiRequest
       .mockResolvedValueOnce({ id: 'test-domain-id', domain: 'example.com', webhookId: '' })
-      .mockResolvedValueOnce({ success: true, webhook: { id: 'wh-1' }, alias: { id: 'al-1' } });
+      .mockResolvedValueOnce({ success: true, webhook: { id: 'wh-1', hasSecret: true }, alias: { id: 'al-1' } });
 
     await triggerNode.webhookMethods.default.create.call(context);
 
-    expect(upsertBody()).not.toHaveProperty('webhookSecret');
+    expect(upsertBody().webhookSecret).toBe(SECRET);
   });
 });

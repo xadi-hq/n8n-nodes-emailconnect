@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - **Deactivating a workflow deletes only an alias the trigger created.** An alias that existed before (made by hand, or by another workflow), or one whose origin is unknown because it was registered before this version, is switched off instead of deleted: its settings stay, mail to it is rejected as an inactive alias, and reactivating the workflow switches it back on. Catch-all teardown is unchanged: the previous webhook is restored.
 
 ### Changed
-- **The webhook signing secret is set per trigger.** Turn on **Verify Signatures** in the EmailConnect Trigger and select an **EmailConnect Webhook Signing API** credential holding the secret, one per trigger, so each webhook can have its own. The **Webhook Signing Secret** field on the EmailConnect API credential (1.4.0) is removed: a trigger that relied on it stops verifying until you turn on Verify Signatures and select a signing credential, then reactivate the workflow.
+- **The webhook signing secret is set per trigger.** Turn on **Verify Signatures** in the EmailConnect Trigger and select an **EmailConnect Webhook Signing API** credential holding the secret, one per trigger, so each webhook can have its own. The **Webhook Signing Secret** field on the EmailConnect API credential (1.4.0) is no longer used. While it still holds a value and Verify Signatures is off, activation refuses with an explanation rather than silently stop verifying: turn on Verify Signatures and select a signing credential holding the secret, then clear the old field (or just clear it to stop verifying).
 
 ## [1.4.0] - 2026-10-14
 

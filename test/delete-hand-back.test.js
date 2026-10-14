@@ -229,6 +229,21 @@ describe('EmailConnectTrigger: hand back instead of delete', () => {
       expect(staticData.webhookId).toBeUndefined();
     });
 
+    test('keeps the registration when pointing the webhook back fails', async () => {
+      context.getNodeWebhookUrl.mockReturnValue(TEST_URL);
+      staticData.restoreUrl = PROD_URL;
+      routeApi({
+        'GET /api/webhooks/wh-1': { id: 'wh-1', name: 'hello endpoint', url: TEST_URL },
+        'PUT /api/webhooks/wh-1': () => { throw Object.assign(new Error('Bad gateway'), { httpCode: '502' }); },
+      });
+
+      expect(await remove()).toBe(true);
+
+      expect(calls()).not.toContain('POST /api/webhooks/alias/teardown');
+      expect(staticData.webhookId).toBe('wh-1');
+      expect(context.logger.warn).toHaveBeenCalled();
+    });
+
     test('leaves everything as it is when the webhook cannot be read', async () => {
       staticData.aliasCreated = false;
       routeApi({ 'GET /api/webhooks/wh-1': () => { throw Object.assign(new Error('socket hang up'), { httpCode: '502' }); } });

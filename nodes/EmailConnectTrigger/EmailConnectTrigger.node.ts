@@ -54,6 +54,7 @@ async function readWebhookSecret(context: IHookFunctions | IWebhookFunctions): P
  */
 async function getWebhookSecretForActivation(context: IHookFunctions): Promise<string | undefined> {
 	const secret = await readWebhookSecret(context);
+	if (!secret) await refuseAccountLevelSecret(context);
 	if (secret && !WEBHOOK_SECRET_PATTERN.test(secret)) {
 		throw new NodeOperationError(
 			context.getNode(),
@@ -62,6 +63,26 @@ async function getWebhookSecretForActivation(context: IHookFunctions): Promise<s
 		);
 	}
 	return secret;
+}
+
+/**
+ * 1.4.0 kept the secret on the account credential. A trigger upgraded with
+ * that value still set, and Verify Signatures off, would quietly stop
+ * verifying; refuse activation and say how to move it instead.
+ */
+async function refuseAccountLevelSecret(context: IHookFunctions): Promise<void> {
+	const account = await context.getCredentials('emailConnectApi');
+	const legacy = typeof account?.webhookSecret === 'string' ? account.webhookSecret.trim() : '';
+	if (!legacy) return;
+	throw new NodeOperationError(
+		context.getNode(),
+		'The webhook signing secret has moved from the EmailConnect API credential to the trigger',
+		{
+			description:
+				'To keep verifying: turn on Verify Signatures on this trigger and select an EmailConnect Webhook Signing API credential holding the secret. ' +
+				'Then, or to stop verifying, clear "Webhook Signing Secret (No Longer Used)" in the EmailConnect API credential.',
+		},
+	);
 }
 
 function hashWebhookSecret(secret: string | undefined): string | undefined {
