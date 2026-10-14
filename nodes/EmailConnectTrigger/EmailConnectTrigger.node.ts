@@ -23,19 +23,27 @@ const TRUSTED_SOURCE_HEADERS = { 'X-EmailConnect-Source': 'n8n-node' };
 // Webhook signing (Standard Webhooks, https://www.standardwebhooks.com).
 // EmailConnect signs every delivery with HMAC-SHA256 over
 // `${webhook-id}.${webhook-timestamp}.${raw body}`, keyed with the base64-decoded
-// part of a `whsec_` secret. The secret lives in the credential — shared by the
-// test and production registrations, which share one EmailConnect webhook — and
-// the node sends it with the upsert. Hand-rolled: verified community nodes may
-// not have runtime dependencies.
+// part of a `whsec_` secret. The secret is a per-trigger credential
+// (emailConnectWebhookSigningApi, selected when Verify Signatures is on), so
+// each webhook can have its own; the test and production registrations of one
+// trigger share it, as they share one EmailConnect webhook. The node sends it
+// with the upsert. Hand-rolled: verified community nodes may not have runtime
+// dependencies.
 // ---------------------------------------------------------------------------
 const WEBHOOK_SECRET_PATTERN = /^whsec_[A-Za-z0-9+/]+={0,2}$/;
 const SIGNATURE_TOLERANCE_SECONDS = 5 * 60;
 const ROTATION_HINT = 'If you just changed the signing secret, deactivate and reactivate the workflow.';
+const SIGNING_CREDENTIAL = 'emailConnectWebhookSigningApi';
 
-/** The credential's signing secret, trimmed; undefined when not configured. */
+/**
+ * This trigger's signing secret, trimmed; undefined when Verify Signatures is
+ * off. Read the switch first: getCredentials throws when no signing
+ * credential is selected.
+ */
 async function readWebhookSecret(context: IHookFunctions | IWebhookFunctions): Promise<string | undefined> {
-	const credentials = await context.getCredentials('emailConnectApi');
-	const secret = typeof credentials?.webhookSecret === 'string' ? credentials.webhookSecret.trim() : '';
+	if (!context.getNodeParameter('verifySignatures', false)) return undefined;
+	const credentials = await context.getCredentials(SIGNING_CREDENTIAL);
+	const secret = typeof credentials?.secret === 'string' ? credentials.secret.trim() : '';
 	return secret || undefined;
 }
 
@@ -49,7 +57,7 @@ async function getWebhookSecretForActivation(context: IHookFunctions): Promise<s
 	if (secret && !WEBHOOK_SECRET_PATTERN.test(secret)) {
 		throw new NodeOperationError(
 			context.getNode(),
-			'The webhook signing secret in the EmailConnect credential must be in "whsec_" + base64 format',
+			'The EmailConnect webhook signing secret must be in "whsec_" + base64 format',
 			{ description: 'Generate one with: echo "whsec_$(openssl rand -base64 24)"' },
 		);
 	}
@@ -164,7 +172,7 @@ async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): P
 			throw new NodeOperationError(
 				context.getNode(),
 				'Webhook signing requires an EmailConnect Maker plan or higher',
-				{ description: 'Upgrade your plan, or clear the Webhook Signing Secret in the EmailConnect credential.' },
+				{ description: 'Upgrade your plan, or turn off Verify Signatures on the trigger.' },
 			);
 		}
 		throw error;
@@ -174,7 +182,7 @@ async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): P
 		throw new NodeOperationError(
 			context.getNode(),
 			'EmailConnect did not store the webhook signing secret',
-			{ description: 'The trigger would reject every delivery. Clear the Webhook Signing Secret in the credential, or contact EmailConnect support.' },
+			{ description: 'The trigger would reject every delivery. Turn off Verify Signatures on the trigger, or contact EmailConnect support.' },
 		);
 	}
 
@@ -501,6 +509,15 @@ export class EmailConnectTrigger implements INodeType {
 				name: 'emailConnectApi',
 				required: true,
 			},
+			{
+				name: SIGNING_CREDENTIAL,
+				required: true,
+				displayOptions: {
+					show: {
+						verifySignatures: [true],
+					},
+				},
+			},
 		],
 		webhooks: [
 			{
@@ -583,7 +600,13 @@ export class EmailConnectTrigger implements INodeType {
 				placeholder: 'Handles support emails via N8N workflow',
 				description: 'Optional description for this webhook configuration',
 			},
-
+			{
+				displayName: 'Verify Signatures',
+				name: 'verifySignatures',
+				type: 'boolean',
+				default: false,
+				description: 'Whether to reject any request without a valid EmailConnect signature (HTTP 401). Select an EmailConnect Webhook Signing API credential, one per trigger; the trigger stores it on its webhook when the workflow is activated. Requires an EmailConnect Maker plan or higher.',
+			},
 		],
 	};
 
