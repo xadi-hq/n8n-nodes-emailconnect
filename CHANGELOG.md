@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3] - 2026-10-14
+
+### Fixed
+- Resolved every error n8n's community-package scanner reports, for n8n verification:
+  - **Signing credential test.** The EmailConnect Webhook Signing API credential can now be tested from the credentials screen: it checks the secret is in `whsec_` + base64 format. It makes no API call.
+  - **Credential icons.** Both credentials show the EmailConnect icon.
+  - **Item linking.** Every item the EmailConnect node outputs now carries `pairedItem`, so expressions that refer back to input items resolve correctly.
+  - **Errors.** API errors keep their HTTP context, and other errors in the EmailConnect node name the item that failed. The trigger no longer imports Node's `http` types.
+  - **Teardown logging.** Failures in the non-critical catch-all steps of deactivation are now logged at debug level instead of silently ignored. Behaviour is otherwise unchanged.
+  - The EmailConnect node can be used as an AI agent tool. The trigger shows its alias (or "Domain catch-all") as a subtitle. The emoji is gone from the trigger's welcome notice title.
+
+### Development
+- `npm run lint:n8n` runs the same lint as `npx @n8n/scan-community-package`, against the working tree rather than the published package. It runs in CI, before publishing, and in a pre-push git hook. Enable the hook once per clone with `npm run hooks:install`. Git can't install it automatically: n8n's scanner forbids `prepare` and `install` scripts in community node packages.
+
 ## [1.4.2] - 2026-10-14
 
 ### Removed

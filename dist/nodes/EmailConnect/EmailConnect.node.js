@@ -11,6 +11,7 @@ class EmailConnect {
             icon: 'file:emailconnect.svg',
             group: ['transform'],
             version: 1,
+            usableAsTool: true,
             subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
             description: 'Interact with EmailConnect API for email automation',
             defaults: {
@@ -541,12 +542,12 @@ class EmailConnect {
                     if (operation === 'getAll') {
                         const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/domains');
                         const domains = limitItems(response === null || response === void 0 ? void 0 : response.domains, i);
-                        returnData.push(...domains.map((item) => ({ json: item })));
+                        returnData.push(...domains.map((item) => ({ json: item, pairedItem: { item: i } })));
                     }
                     else if (operation === 'get') {
                         const domainId = this.getNodeParameter('domainId', i);
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'updateConfig') {
                         const domainId = this.getNodeParameter('domainId', i);
@@ -557,7 +558,7 @@ class EmailConnect {
                             includeEnvelope: includeEnvelopeData,
                         };
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}`, body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                 }
                 else if (resource === 'alias') {
@@ -565,12 +566,12 @@ class EmailConnect {
                         const domainId = this.getNodeParameter('domainId', i);
                         const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
                         const aliases = limitItems(response === null || response === void 0 ? void 0 : response.aliases, i);
-                        returnData.push(...aliases.map((item) => ({ json: item })));
+                        returnData.push(...aliases.map((item) => ({ json: item, pairedItem: { item: i } })));
                     }
                     else if (operation === 'get') {
                         const aliasId = this.getNodeParameter('aliasId', i);
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'create') {
                         const domainId = this.getNodeParameter('domainId', i);
@@ -579,7 +580,7 @@ class EmailConnect {
                         const additionalFields = this.getNodeParameter('aliasAdditionalFields', i, {});
                         const body = { localPart, domainId, webhookId, ...additionalFields };
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/aliases', body);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'update') {
                         const aliasId = this.getNodeParameter('aliasId', i);
@@ -588,24 +589,24 @@ class EmailConnect {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Select at least one field to update', { itemIndex: i });
                         }
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}`, updateFields);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'delete') {
                         const aliasId = this.getNodeParameter('aliasId', i);
                         await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/aliases/${aliasId}`);
-                        returnData.push({ json: { success: true, aliasId } });
+                        returnData.push({ json: { success: true, aliasId }, pairedItem: { item: i } });
                     }
                 }
                 else if (resource === 'webhook') {
                     if (operation === 'getAll') {
                         const response = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
                         const webhooks = limitItems(response === null || response === void 0 ? void 0 : response.webhooks, i);
-                        returnData.push(...webhooks.map((item) => ({ json: item })));
+                        returnData.push(...webhooks.map((item) => ({ json: item, pairedItem: { item: i } })));
                     }
                     else if (operation === 'get') {
                         const webhookId = this.getNodeParameter('webhookId', i);
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'create') {
                         const name = this.getNodeParameter('name', i);
@@ -617,7 +618,7 @@ class EmailConnect {
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'POST', '/api/webhooks', body, {}, undefined, {
                             'X-EmailConnect-Source': 'n8n-node',
                         });
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'update') {
                         const webhookId = this.getNodeParameter('webhookId', i);
@@ -632,22 +633,26 @@ class EmailConnect {
                         const responseData = await GenericFunctions_1.emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body, {}, undefined, {
                             'X-EmailConnect-Source': 'n8n-node',
                         });
-                        returnData.push({ json: responseData });
+                        returnData.push({ json: responseData, pairedItem: { item: i } });
                     }
                     else if (operation === 'delete') {
                         const webhookId = this.getNodeParameter('webhookId', i);
                         await GenericFunctions_1.emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
-                        returnData.push({ json: { success: true, webhookId } });
+                        returnData.push({ json: { success: true, webhookId }, pairedItem: { item: i } });
                     }
                 }
             }
             catch (error) {
                 if (this.continueOnFail()) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                    returnData.push({ json: { error: errorMessage } });
+                    returnData.push({ json: { error: errorMessage }, pairedItem: { item: i } });
                     continue;
                 }
-                throw error;
+                // API failures arrive as NodeApiError (kept as is, with their HTTP
+                // context); anything else is ours and gets this item's index.
+                if (error instanceof n8n_workflow_1.NodeApiError)
+                    throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), error, { itemIndex: i });
             }
         }
         return [returnData];

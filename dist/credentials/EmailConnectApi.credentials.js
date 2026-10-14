@@ -5,11 +5,13 @@ class EmailConnectApi {
     constructor() {
         this.name = 'emailConnectApi';
         this.displayName = 'EmailConnect API';
+        // Relative to the compiled file too: gulp copies node icons to dist/nodes.
+        this.icon = 'file:../nodes/EmailConnect/emailconnect.svg';
         this.documentationUrl = 'https://emailconnect.eu/docs/';
         this.properties = [
             {
                 displayName: 'Need an API Key?',
-                name: 'apiKeyHelp',
+                name: 'gettingStarted',
                 type: 'notice',
                 default: '',
                 typeOptions: {

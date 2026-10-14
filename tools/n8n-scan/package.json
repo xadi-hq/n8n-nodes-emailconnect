@@ -1,0 +1,9 @@
+{
+  "name": "n8n-scan-local",
+  "private": true,
+  "description": "Runs n8n's community-package scanner lint over this repo's source, before publishing. Kept out of the root package: the scanner pins eslint and n8n-workflow versions the node itself does not use.",
+  "type": "module",
+  "dependencies": {
+    "@n8n/scan-community-package": "0.39.0"
+  }
+}

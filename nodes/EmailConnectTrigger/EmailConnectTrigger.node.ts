@@ -1,15 +1,19 @@
 import {
+	ICredentialTestFunctions,
+	ICredentialsDecrypted,
 	IDataObject,
 	IHookFunctions,
 	INodeType,
 	INodeTypeDescription,
 	IWebhookFunctions,
 	IWebhookResponseData,
+	INodeCredentialTestResult,
+	JsonObject,
+	NodeApiError,
 	NodeOperationError,
 	type NodeConnectionType,
 } from 'n8n-workflow';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
-import type { IncomingHttpHeaders } from 'http';
 
 import { emailConnectApiRequest, getDomainOptions } from '../EmailConnect/GenericFunctions';
 
@@ -67,6 +71,10 @@ async function getWebhookSecretForActivation(context: IHookFunctions): Promise<s
 function hashWebhookSecret(secret: string | undefined): string | undefined {
 	return secret ? createHash('sha256').update(secret, 'utf8').digest('hex') : undefined;
 }
+
+// Node's `http` types are off limits to community nodes (no-restricted-imports),
+// so describe request headers the way IncomingHttpHeaders does.
+type IncomingHttpHeaders = Record<string, string | string[] | undefined>;
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
 	return Array.isArray(value) ? value[0] : value;
@@ -175,7 +183,8 @@ async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): P
 				{ description: 'Upgrade your plan, or turn off Verify Signatures on the trigger.' },
 			);
 		}
-		throw error;
+		// emailConnectApiRequest throws NodeApiError, which this returns unchanged.
+		throw new NodeApiError(context.getNode(), error as JsonObject);
 	}
 
 	if (body.webhookSecret && result?.webhook?.hasSecret === false) {
@@ -498,6 +507,7 @@ export class EmailConnectTrigger implements INodeType {
 		icon: 'file:emailconnect.svg',
 		group: ['trigger'],
 		version: 1,
+		subtitle: '={{$parameter["aliasMode"] === "catchall" ? "Domain catch-all" : "Alias: " + $parameter["aliasLocalPart"]}}',
 		description: 'Trigger workflows when emails are received via EmailConnect - 100% EU-operated email service with multi-alias support',
 		defaults: {
 			name: 'EmailConnect Trigger',
@@ -510,8 +520,10 @@ export class EmailConnectTrigger implements INodeType {
 				required: true,
 			},
 			{
-				name: SIGNING_CREDENTIAL,
+				// A literal, not SIGNING_CREDENTIAL: n8n's lint reads testedBy from it.
+				name: 'emailConnectWebhookSigningApi',
 				required: true,
+				testedBy: 'emailConnectWebhookSigningApiTest',
 				displayOptions: {
 					show: {
 						verifySignatures: [true],
@@ -529,7 +541,7 @@ export class EmailConnectTrigger implements INodeType {
 		],
 		properties: [
 			{
-				displayName: '🇪🇺 Welcome to EmailConnect',
+				displayName: 'Welcome to EmailConnect',
 				name: 'gettingStarted',
 				type: 'notice',
 				default: '',
@@ -613,6 +625,23 @@ export class EmailConnectTrigger implements INodeType {
 	methods = {
 		loadOptions: {
 			getDomains: getDomainOptions,
+		},
+		credentialTest: {
+			// No API call: the secret is only ever sent in the alias upsert, so
+			// the one thing to check up front is the format EmailConnect needs.
+			async emailConnectWebhookSigningApiTest(
+				this: ICredentialTestFunctions,
+				credential: ICredentialsDecrypted,
+			): Promise<INodeCredentialTestResult> {
+				const secret = typeof credential.data?.secret === 'string' ? credential.data.secret.trim() : '';
+				if (!WEBHOOK_SECRET_PATTERN.test(secret)) {
+					return {
+						status: 'Error',
+						message: 'The signing secret must be in "whsec_" + base64 format. Generate one with: echo "whsec_$(openssl rand -base64 24)"',
+					};
+				}
+				return { status: 'OK', message: 'Signing secret format is valid' };
+			},
 		},
 	};
 
@@ -760,9 +789,11 @@ export class EmailConnectTrigger implements INodeType {
 
 					return true;
 				} catch (error) {
-					// Our own errors already say what to do — don't bury them in a prefix.
-					if (error instanceof NodeOperationError) throw error;
-					throw new NodeOperationError(this.getNode(), `Failed to configure webhook endpoint: ${error}`);
+					// Our own errors already say what to do: NodeOperationError returns
+					// one of its own unchanged, so only other errors get the prefix.
+					throw new NodeOperationError(this.getNode(), error as Error, {
+						message: `Failed to configure webhook endpoint: ${(error as Error).message}`,
+					});
 				}
 			},
 
@@ -840,8 +871,9 @@ export class EmailConnectTrigger implements INodeType {
 												webhookId: null,
 											});
 										}
-									} catch {
-										// non-critical
+									} catch (error) {
+										// Non-critical: the main detach/restore above already ran.
+										this.logger.debug(`EmailConnect: could not detach the domain catch-all webhook: ${error}`);
 									}
 								}
 							} else {
@@ -860,8 +892,9 @@ export class EmailConnectTrigger implements INodeType {
 												webhookId: null,
 											});
 										}
-									} catch {
-										// non-critical
+									} catch (error) {
+										// Non-critical: the main detach/restore above already ran.
+										this.logger.debug(`EmailConnect: could not detach the catch-all alias webhook: ${error}`);
 									}
 								}
 							}
@@ -891,8 +924,9 @@ export class EmailConnectTrigger implements INodeType {
 												webhookId: previousDomainWebhookId || null,
 											});
 										}
-									} catch {
-										// non-critical
+									} catch (error) {
+										// Non-critical: the main detach/restore above already ran.
+										this.logger.debug(`EmailConnect: could not restore the domain catch-all webhook: ${error}`);
 									}
 								}
 							} else {
@@ -910,8 +944,9 @@ export class EmailConnectTrigger implements INodeType {
 												webhookId: previousCatchAllWebhookId || null,
 											});
 										}
-									} catch {
-										// non-critical
+									} catch (error) {
+										// Non-critical: the main detach/restore above already ran.
+										this.logger.debug(`EmailConnect: could not restore the catch-all alias webhook: ${error}`);
 									}
 								}
 							}

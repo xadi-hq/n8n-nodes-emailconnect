@@ -6,6 +6,8 @@ import {
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
+	JsonObject,
+	NodeApiError,
 	NodeOperationError,
 	type NodeConnectionType,
 } from 'n8n-workflow';
@@ -19,6 +21,7 @@ export class EmailConnect implements INodeType {
 		icon: 'file:emailconnect.svg',
 		group: ['transform'],
 		version: 1,
+		usableAsTool: true,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description: 'Interact with EmailConnect API for email automation',
 		defaults: {
@@ -563,11 +566,11 @@ export class EmailConnect implements INodeType {
 					if (operation === 'getAll') {
 						const response = await emailConnectApiRequest.call(this, 'GET', '/api/domains');
 						const domains = limitItems(response?.domains, i);
-						returnData.push(...domains.map((item: any) => ({ json: item })));
+						returnData.push(...domains.map((item: any) => ({ json: item, pairedItem: { item: i } })));
 					} else if (operation === 'get') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/domains/${domainId}`);
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'updateConfig') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const allowAttachments = this.getNodeParameter('allowAttachments', i) as boolean;
@@ -579,18 +582,18 @@ export class EmailConnect implements INodeType {
 						};
 
 						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/domains/${domainId}`, body);
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					}
 				} else if (resource === 'alias') {
 					if (operation === 'getAll') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const response = await emailConnectApiRequest.call(this, 'GET', `/api/aliases?domainId=${domainId}`);
 						const aliases = limitItems(response?.aliases, i);
-						returnData.push(...aliases.map((item: any) => ({ json: item })));
+						returnData.push(...aliases.map((item: any) => ({ json: item, pairedItem: { item: i } })));
 					} else if (operation === 'get') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/aliases/${aliasId}`);
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'create') {
 						const domainId = this.getNodeParameter('domainId', i) as string;
 						const localPart = this.getNodeParameter('localPart', i) as string;
@@ -599,7 +602,7 @@ export class EmailConnect implements INodeType {
 
 						const body = { localPart, domainId, webhookId, ...additionalFields };
 						const responseData = await emailConnectApiRequest.call(this, 'POST', '/api/aliases', body);
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'update') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
 						const updateFields = this.getNodeParameter('aliasUpdateFields', i, {}) as IDataObject;
@@ -609,21 +612,21 @@ export class EmailConnect implements INodeType {
 						}
 
 						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/aliases/${aliasId}`, updateFields);
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'delete') {
 						const aliasId = this.getNodeParameter('aliasId', i) as string;
 						await emailConnectApiRequest.call(this, 'DELETE', `/api/aliases/${aliasId}`);
-						returnData.push({ json: { success: true, aliasId } });
+						returnData.push({ json: { success: true, aliasId }, pairedItem: { item: i } });
 					}
 				} else if (resource === 'webhook') {
 					if (operation === 'getAll') {
 						const response = await emailConnectApiRequest.call(this, 'GET', '/api/webhooks');
 						const webhooks = limitItems(response?.webhooks, i);
-						returnData.push(...webhooks.map((item: any) => ({ json: item })));
+						returnData.push(...webhooks.map((item: any) => ({ json: item, pairedItem: { item: i } })));
 					} else if (operation === 'get') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
 						const responseData = await emailConnectApiRequest.call(this, 'GET', `/api/webhooks/${webhookId}`);
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'create') {
 						const name = this.getNodeParameter('name', i) as string;
 						const url = this.getNodeParameter('url', i) as string;
@@ -635,7 +638,7 @@ export class EmailConnect implements INodeType {
 						const responseData = await emailConnectApiRequest.call(this, 'POST', '/api/webhooks', body, {}, undefined, {
 							'X-EmailConnect-Source': 'n8n-node',
 						});
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'update') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
 						const name = this.getNodeParameter('name', i) as string;
@@ -650,20 +653,23 @@ export class EmailConnect implements INodeType {
 						const responseData = await emailConnectApiRequest.call(this, 'PUT', `/api/webhooks/${webhookId}`, body, {}, undefined, {
 							'X-EmailConnect-Source': 'n8n-node',
 						});
-						returnData.push({ json: responseData });
+						returnData.push({ json: responseData, pairedItem: { item: i } });
 					} else if (operation === 'delete') {
 						const webhookId = this.getNodeParameter('webhookId', i) as string;
 						await emailConnectApiRequest.call(this, 'DELETE', `/api/webhooks/${webhookId}`);
-						returnData.push({ json: { success: true, webhookId } });
+						returnData.push({ json: { success: true, webhookId }, pairedItem: { item: i } });
 					}
 				}
 			} catch (error) {
 				if (this.continueOnFail()) {
 					const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-					returnData.push({ json: { error: errorMessage } });
+					returnData.push({ json: { error: errorMessage }, pairedItem: { item: i } });
 					continue;
 				}
-				throw error;
+				// API failures arrive as NodeApiError (kept as is, with their HTTP
+				// context); anything else is ours and gets this item's index.
+				if (error instanceof NodeApiError) throw new NodeApiError(this.getNode(), error as unknown as JsonObject);
+				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
 			}
 		}
 

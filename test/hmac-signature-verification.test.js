@@ -333,6 +333,26 @@ describe('Activation with a signing secret', () => {
     );
   });
 
+  test('create() passes its own errors through without the generic prefix', async () => {
+    emailConnectApiRequest
+      .mockResolvedValueOnce({ id: 'test-domain-id', domain: 'example.com', webhookId: '' })
+      .mockResolvedValueOnce({ success: true, webhook: { id: 'wh-1', hasSecret: false }, alias: { id: 'al-1' } });
+
+    await expect(triggerNode.webhookMethods.default.create.call(context)).rejects.toMatchObject({
+      message: 'EmailConnect did not store the webhook signing secret',
+    });
+  });
+
+  test('create() prefixes other failures with what it was doing', async () => {
+    emailConnectApiRequest
+      .mockResolvedValueOnce({ id: 'test-domain-id', domain: 'example.com', webhookId: '' })
+      .mockRejectedValueOnce(new Error('Service unavailable'));
+
+    await expect(triggerNode.webhookMethods.default.create.call(context)).rejects.toMatchObject({
+      message: 'Failed to configure webhook endpoint: Service unavailable',
+    });
+  });
+
   test('create() rejects a non-whsec_ secret before calling the API', async () => {
     credentials = { apiKey: 'test-api-key', webhookSecret: 'my-plain-password-1234' };
 
@@ -410,5 +430,27 @@ describe('Activation with a signing secret', () => {
 
     expect(context.getCredentials).not.toHaveBeenCalledWith('emailConnectWebhookSigningApi');
     expect(upsertBody()).not.toHaveProperty('webhookSecret');
+  });
+});
+
+describe('EmailConnect Webhook Signing API credential test', () => {
+  const testSecret = (secret) =>
+    new EmailConnectTrigger().methods.credentialTest.emailConnectWebhookSigningApiTest.call({}, { data: { secret } });
+
+  test('accepts a whsec_ + base64 secret, ignoring surrounding whitespace', async () => {
+    await expect(testSecret(`  ${SECRET}\n`)).resolves.toMatchObject({ status: 'OK' });
+  });
+
+  test.each([
+    ['an empty value', ''],
+    ['a secret without the whsec_ prefix', 'my-plain-password-1234'],
+    ['a prefix with non-base64 content', 'whsec_not base64!'],
+  ])('rejects %s', async (_label, secret) => {
+    await expect(testSecret(secret)).resolves.toMatchObject({ status: 'Error', message: expect.stringContaining('whsec_') });
+  });
+
+  test('is wired to the signing credential on the trigger', () => {
+    const entry = new EmailConnectTrigger().description.credentials.find((c) => c.name === 'emailConnectWebhookSigningApi');
+    expect(entry.testedBy).toBe('emailConnectWebhookSigningApiTest');
   });
 });

@@ -26,6 +26,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The rules n8n's community-package scanner enforces for verification.
+      - name: Lint (n8n scanner rules)
+        run: npm run lint:n8n
+
       # Build must run before tests: the test suite loads the compiled nodes from dist/.
       - name: Build
         run: npm run build

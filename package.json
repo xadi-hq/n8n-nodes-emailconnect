@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-emailconnect",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "n8n community node for EmailConnect - Email automation and webhook integration",
   "keywords": [
     "n8n-community-node-package",
@@ -36,9 +36,11 @@
     "format:check": "prettier nodes credentials --check",
     "lint": "eslint nodes credentials",
     "lintfix": "eslint nodes credentials --fix",
+    "lint:n8n": "node tools/n8n-scan/lint.mjs",
+    "hooks:install": "git config core.hooksPath .githooks",
     "test": "jest",
     "test:watch": "jest --watch",
-    "prepublishOnly": "npm run build && npm run lint -s"
+    "prepublishOnly": "npm run build && npm run lint -s && npm run lint:n8n -s"
   },
   "files": [
     "dist"
