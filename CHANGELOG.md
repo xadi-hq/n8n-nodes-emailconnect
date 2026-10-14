@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-10-14
+
+### Fixed
+- **Listening for a test event on an active workflow no longer deletes its alias.** Test and production share one EmailConnect webhook, so *Listen for test event* points it at n8n's test URL. When the session ended, the trigger tore the webhook down, and EmailConnect deleted the production alias with it. The trigger now remembers where the webhook pointed and points it back. A test session that cannot tell hands the webhook to the workflow's production URL rather than deleting anything. Present since 1.3.2.
+- **Deactivating a workflow deletes only an alias the trigger created.** An alias that existed before (made by hand, or by another workflow), or one whose origin is unknown because it was registered before this version, is switched off instead of deleted: its settings stay, mail to it is rejected as an inactive alias, and reactivating the workflow switches it back on. Catch-all teardown is unchanged: the previous webhook is restored.
+
+### Changed
+- **The webhook signing secret is set per trigger.** Turn on **Verify Signatures** in the EmailConnect Trigger and select an **EmailConnect Webhook Signing API** credential holding the secret, one per trigger, so each webhook can have its own. The **Webhook Signing Secret** field on the EmailConnect API credential (1.4.0) is no longer used. While it still holds a value and Verify Signatures is off, activation refuses with an explanation rather than silently stop verifying: turn on Verify Signatures and select a signing credential holding the secret, then clear the old field (or just clear it to stop verifying).
+
 ## [1.4.0] - 2026-10-14
 
 ### Added

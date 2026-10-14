@@ -43,6 +43,10 @@ describe('EmailConnectTrigger delete()', () => {
       previousCatchAllWebhookId: '',
       aliasMode: 'specific',
       aliasLocalPart: 'support',
+      // These cases are a registration that created its own alias, so
+      // teardown deletes it. Hand-back cases are in delete-hand-back.test.js.
+      aliasCreated: true,
+      createdUrl: TEST_URL,
     };
 
     mockContext = {

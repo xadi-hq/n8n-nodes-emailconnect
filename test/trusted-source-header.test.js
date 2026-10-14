@@ -94,6 +94,8 @@ describe('Trusted-source header on webhook/alias upsert', () => {
     emailConnectApiRequest
       // GET /api/webhooks/{id} — URL differs from current
       .mockResolvedValueOnce({ id: 'existing-webhook-id', url: storedUrl, verified: true })
+      // GET /api/aliases/{id} — remembered so the test session can hand it back
+      .mockResolvedValueOnce({ id: 'test-alias-id', active: true })
       // POST /api/webhooks/alias (re-upsert)
       .mockResolvedValueOnce({
         success: true,
@@ -105,7 +107,7 @@ describe('Trusted-source header on webhook/alias upsert', () => {
 
     expect(result).toBe(true);
     expect(emailConnectApiRequest).toHaveBeenNthCalledWith(
-      2,
+      3,
       'POST',
       '/api/webhooks/alias',
       expect.objectContaining({ webhookUrl: currentUrl }),

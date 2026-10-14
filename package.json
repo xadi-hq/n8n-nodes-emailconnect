@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-emailconnect",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "n8n community node for EmailConnect - Email automation and webhook integration",
   "keywords": [
     "n8n-community-node-package",
@@ -46,7 +46,8 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/EmailConnectApi.credentials.js"
+      "dist/credentials/EmailConnectApi.credentials.js",
+      "dist/credentials/EmailConnectWebhookSigningApi.credentials.js"
     ],
     "nodes": [
       "dist/nodes/EmailConnect/EmailConnect.node.js",

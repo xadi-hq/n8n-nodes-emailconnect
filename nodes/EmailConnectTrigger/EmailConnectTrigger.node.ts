@@ -23,19 +23,27 @@ const TRUSTED_SOURCE_HEADERS = { 'X-EmailConnect-Source': 'n8n-node' };
 // Webhook signing (Standard Webhooks, https://www.standardwebhooks.com).
 // EmailConnect signs every delivery with HMAC-SHA256 over
 // `${webhook-id}.${webhook-timestamp}.${raw body}`, keyed with the base64-decoded
-// part of a `whsec_` secret. The secret lives in the credential — shared by the
-// test and production registrations, which share one EmailConnect webhook — and
-// the node sends it with the upsert. Hand-rolled: verified community nodes may
-// not have runtime dependencies.
+// part of a `whsec_` secret. The secret is a per-trigger credential
+// (emailConnectWebhookSigningApi, selected when Verify Signatures is on), so
+// each webhook can have its own; the test and production registrations of one
+// trigger share it, as they share one EmailConnect webhook. The node sends it
+// with the upsert. Hand-rolled: verified community nodes may not have runtime
+// dependencies.
 // ---------------------------------------------------------------------------
 const WEBHOOK_SECRET_PATTERN = /^whsec_[A-Za-z0-9+/]+={0,2}$/;
 const SIGNATURE_TOLERANCE_SECONDS = 5 * 60;
 const ROTATION_HINT = 'If you just changed the signing secret, deactivate and reactivate the workflow.';
+const SIGNING_CREDENTIAL = 'emailConnectWebhookSigningApi';
 
-/** The credential's signing secret, trimmed; undefined when not configured. */
+/**
+ * This trigger's signing secret, trimmed; undefined when Verify Signatures is
+ * off. Read the switch first: getCredentials throws when no signing
+ * credential is selected.
+ */
 async function readWebhookSecret(context: IHookFunctions | IWebhookFunctions): Promise<string | undefined> {
-	const credentials = await context.getCredentials('emailConnectApi');
-	const secret = typeof credentials?.webhookSecret === 'string' ? credentials.webhookSecret.trim() : '';
+	if (!context.getNodeParameter('verifySignatures', false)) return undefined;
+	const credentials = await context.getCredentials(SIGNING_CREDENTIAL);
+	const secret = typeof credentials?.secret === 'string' ? credentials.secret.trim() : '';
 	return secret || undefined;
 }
 
@@ -46,14 +54,35 @@ async function readWebhookSecret(context: IHookFunctions | IWebhookFunctions): P
  */
 async function getWebhookSecretForActivation(context: IHookFunctions): Promise<string | undefined> {
 	const secret = await readWebhookSecret(context);
+	if (!secret) await refuseAccountLevelSecret(context);
 	if (secret && !WEBHOOK_SECRET_PATTERN.test(secret)) {
 		throw new NodeOperationError(
 			context.getNode(),
-			'The webhook signing secret in the EmailConnect credential must be in "whsec_" + base64 format',
+			'The EmailConnect webhook signing secret must be in "whsec_" + base64 format',
 			{ description: 'Generate one with: echo "whsec_$(openssl rand -base64 24)"' },
 		);
 	}
 	return secret;
+}
+
+/**
+ * 1.4.0 kept the secret on the account credential. A trigger upgraded with
+ * that value still set, and Verify Signatures off, would quietly stop
+ * verifying; refuse activation and say how to move it instead.
+ */
+async function refuseAccountLevelSecret(context: IHookFunctions): Promise<void> {
+	const account = await context.getCredentials('emailConnectApi');
+	const legacy = typeof account?.webhookSecret === 'string' ? account.webhookSecret.trim() : '';
+	if (!legacy) return;
+	throw new NodeOperationError(
+		context.getNode(),
+		'The webhook signing secret has moved from the EmailConnect API credential to the trigger',
+		{
+			description:
+				'To keep verifying: turn on Verify Signatures on this trigger and select an EmailConnect Webhook Signing API credential holding the secret. ' +
+				'Then, or to stop verifying, clear "Webhook Signing Secret (No Longer Used)" in the EmailConnect API credential.',
+		},
+	);
 }
 
 function hashWebhookSecret(secret: string | undefined): string | undefined {
@@ -164,7 +193,7 @@ async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): P
 			throw new NodeOperationError(
 				context.getNode(),
 				'Webhook signing requires an EmailConnect Maker plan or higher',
-				{ description: 'Upgrade your plan, or clear the Webhook Signing Secret in the EmailConnect credential.' },
+				{ description: 'Upgrade your plan, or turn off Verify Signatures on the trigger.' },
 			);
 		}
 		throw error;
@@ -174,7 +203,7 @@ async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): P
 		throw new NodeOperationError(
 			context.getNode(),
 			'EmailConnect did not store the webhook signing secret',
-			{ description: 'The trigger would reject every delivery. Clear the Webhook Signing Secret in the credential, or contact EmailConnect support.' },
+			{ description: 'The trigger would reject every delivery. Turn off Verify Signatures on the trigger, or contact EmailConnect support.' },
 		);
 	}
 
@@ -194,10 +223,11 @@ async function upsertWebhookAlias(context: IHookFunctions, body: IDataObject): P
 async function updateWebhookUrlAndVerify(
 	context: IHookFunctions,
 	webhookUrl: string,
-	existing?: { name?: string; description?: string },
+	existing?: { name?: string; description?: string; url?: string },
 ): Promise<void> {
 	const staticData = context.getWorkflowStaticData('node');
-	const isTestUrl = (webhookUrl ?? '').includes('/webhook-test/');
+	const isTestUrl = isTestWebhookUrl(webhookUrl);
+	await rememberReplacedRegistration(context, webhookUrl, existing?.url);
 	// The upsert (updateWebhookData) overwrites name/description, and static
 	// data from the test session is not available at activation — so prefer
 	// the node parameter, then static data, then whatever the webhook already
@@ -219,6 +249,47 @@ async function updateWebhookUrlAndVerify(
 	setStoredSecretHash(staticData, webhookSecret);
 }
 
+function isTestWebhookUrl(url: string | undefined): boolean {
+	return (url ?? '').includes('/webhook-test/');
+}
+
+// ---------------------------------------------------------------------------
+// Helper: before re-pointing an existing webhook at this registration's URL,
+// remember where it pointed (and whether its alias was switched off), so
+// delete() can hand it back instead of tearing it down.
+//
+// The case this exists for: "listen for test event" on an ACTIVE workflow.
+// Test and production share one EmailConnect webhook, so the test session
+// re-points it at the test URL; tearing it down when the session ends deleted
+// the production alias with it (cascade). Only the first URL is kept, so
+// repeated re-points within one registration restore the original.
+//
+// A production registration never records a /webhook-test/ URL: that is a
+// stale test session, and "restoring" it on deactivation would point the
+// webhook at a URL nothing listens on.
+// ---------------------------------------------------------------------------
+async function rememberReplacedRegistration(
+	context: IHookFunctions,
+	webhookUrl: string,
+	previousUrl: string | undefined,
+): Promise<void> {
+	const staticData = context.getWorkflowStaticData('node');
+	if (!previousUrl || previousUrl === webhookUrl || staticData.restoreUrl) return;
+	if (!isTestWebhookUrl(webhookUrl) && isTestWebhookUrl(previousUrl)) return;
+
+	staticData.restoreUrl = previousUrl;
+	// The upsert switches an inactive alias back on; a hand-back must switch it off again.
+	const aliasId = staticData.aliasId as string;
+	if (aliasId && staticData.aliasMode !== 'catchall') {
+		try {
+			const alias = await emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
+			if (alias?.active === false) staticData.restoreAliasInactive = true;
+		} catch (error) {
+			context.logger.warn(`EmailConnect: could not read alias ${aliasId} before re-pointing it: ${(error as Error).message}`);
+		}
+	}
+}
+
 function setStoredSecretHash(staticData: IDataObject, webhookSecret: string | undefined): void {
 	const hash = hashWebhookSecret(webhookSecret);
 	if (hash) staticData.webhookSecretHash = hash;
@@ -236,6 +307,10 @@ function clearRegistrationState(staticData: IDataObject): void {
 	delete staticData.previousDomainWebhookId;
 	delete staticData.previousCatchAllWebhookId;
 	delete staticData.webhookSecretHash;
+	delete staticData.restoreUrl;
+	delete staticData.restoreAliasInactive;
+	delete staticData.aliasCreated;
+	delete staticData.createdUrl;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +359,10 @@ async function detectConfigChange(context: IHookFunctions): Promise<boolean> {
 		delete staticData.domainId;
 		delete staticData.aliasLocalPart;
 		delete staticData.webhookSecretHash;
+		delete staticData.restoreUrl;
+		delete staticData.restoreAliasInactive;
+		delete staticData.aliasCreated;
+		delete staticData.createdUrl;
 	}
 
 	return !!changed;
@@ -292,7 +371,9 @@ async function detectConfigChange(context: IHookFunctions): Promise<boolean> {
 // ---------------------------------------------------------------------------
 // Helper: try to reuse the stored webhook ID.
 //  - Returns true   → webhook exists & URL matches (or was updated)
-//  - Returns false  → stored webhook gone, static data cleaned up
+//  - Returns false  → stored webhook gone (static data cleaned up), or its
+//                     alias was switched off by a deactivation (ids kept), so
+//                     create() runs and its upsert switches the alias back on
 //  - Returns undefined → no stored webhook ID
 // ---------------------------------------------------------------------------
 async function tryStoredWebhook(
@@ -315,7 +396,9 @@ async function tryStoredWebhook(
 			return true;
 		}
 
-		// URL matches — nothing changed
+		// URL matches. A deactivated workflow switched its alias off (see
+		// handBackRegistration); have create() switch it back on.
+		if (await storedAliasInactive(context)) return false;
 		return true;
 	} catch (error) {
 		// Stored webhook lookup failed — most commonly because it no longer
@@ -331,6 +414,100 @@ async function tryStoredWebhook(
 		delete staticData.aliasId;
 		return false;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Helper: is the stored (specific) alias switched off? Errors read as "no", so
+// a lookup failure never blocks activation.
+// ---------------------------------------------------------------------------
+async function storedAliasInactive(context: IHookFunctions): Promise<boolean> {
+	const staticData = context.getWorkflowStaticData('node');
+	const aliasId = staticData.aliasId as string;
+	if (!aliasId || staticData.aliasMode === 'catchall') return false;
+	try {
+		const alias = await emailConnectApiRequest.call(context, 'GET', `/api/aliases/${aliasId}`);
+		return alias?.active === false;
+	} catch {
+		return false;
+	}
+}
+
+function isNotFoundError(error: unknown): boolean {
+	const e = error as { httpCode?: unknown; message?: unknown };
+	return String(e?.httpCode) === '404' || /\b404\b/.test(String(e?.message ?? ''));
+}
+
+// ---------------------------------------------------------------------------
+// Helper: release a registration without deleting anything that is not ours.
+// Returns true when handled; false when the caller should tear down (an alias
+// this registration created, or catch-all mode, whose teardown re-points the
+// catch-all to its previous webhook).
+//
+//  1. A webhook this registration re-pointed is pointed back (restoreUrl).
+//  2. A test session that did not run create() for its own URL hands the
+//     webhook to the workflow's production URL. n8n is expected to keep a test
+//     session's static data until it ends; if it ever does not, this keeps
+//     the incident (a deleted production alias) from coming back.
+//  3. A specific alias the trigger did not create, or cannot tell (every
+//     registration from before 1.4.1), is switched off, not deleted: the alias
+//     and its settings stay, mail to it is rejected as alias_inactive, and
+//     reactivating the workflow switches it back on.
+// Every write is guarded by the webhook still pointing at this registration's
+// URL; otherwise another registration owns it and nothing changes.
+// ---------------------------------------------------------------------------
+async function handBackRegistration(
+	context: IHookFunctions,
+	staticData: IDataObject,
+	ownUrl: string,
+): Promise<boolean> {
+	const createdHere = staticData.createdUrl === ownUrl;
+	const ownsAlias = createdHere && staticData.aliasCreated === true;
+	const catchAll = staticData.aliasMode === 'catchall';
+	let restoreUrl = staticData.restoreUrl as string | undefined;
+	if (!restoreUrl && !createdHere && isTestWebhookUrl(ownUrl)) {
+		restoreUrl = ownUrl.replace('/webhook-test/', '/webhook/');
+	}
+	const deactivate = !restoreUrl && !ownsAlias && !catchAll;
+	if (!restoreUrl && !deactivate) return false;
+
+	const webhookId = staticData.webhookId as string;
+	let webhook;
+	try {
+		webhook = await emailConnectApiRequest.call(context, 'GET', `/api/webhooks/${webhookId}`);
+	} catch (error) {
+		if (isNotFoundError(error)) {
+			clearRegistrationState(staticData);
+		} else {
+			context.logger.warn(`EmailConnect: could not read webhook ${webhookId} during cleanup; left unchanged: ${(error as Error).message}`);
+		}
+		return true;
+	}
+	// Superseded: keep static data, the live registration relies on it.
+	if (webhook?.url !== ownUrl) return true;
+
+	const aliasId = staticData.aliasId as string;
+	if (restoreUrl) {
+		await emailConnectApiRequest.call(
+			context,
+			'PUT',
+			`/api/webhooks/${webhookId}`,
+			{ name: webhook.name, url: restoreUrl },
+			{},
+			undefined,
+			TRUSTED_SOURCE_HEADERS,
+		);
+		if (staticData.restoreAliasInactive && aliasId) {
+			await emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}`, { active: false });
+		}
+		clearRegistrationState(staticData);
+		return true;
+	}
+
+	// Keep the ids: the next activation finds the alias switched off and re-runs create().
+	if (aliasId) {
+		await emailConnectApiRequest.call(context, 'PUT', `/api/aliases/${aliasId}`, { active: false });
+	}
+	return true;
 }
 
 // ===========================================================================
@@ -352,6 +529,15 @@ export class EmailConnectTrigger implements INodeType {
 			{
 				name: 'emailConnectApi',
 				required: true,
+			},
+			{
+				name: SIGNING_CREDENTIAL,
+				required: true,
+				displayOptions: {
+					show: {
+						verifySignatures: [true],
+					},
+				},
 			},
 		],
 		webhooks: [
@@ -435,7 +621,13 @@ export class EmailConnectTrigger implements INodeType {
 				placeholder: 'Handles support emails via N8N workflow',
 				description: 'Optional description for this webhook configuration',
 			},
-
+			{
+				displayName: 'Verify Signatures',
+				name: 'verifySignatures',
+				type: 'boolean',
+				default: false,
+				description: 'Whether to reject any request without a valid EmailConnect signature (HTTP 401). Select an EmailConnect Webhook Signing API credential, one per trigger; the trigger stores it on its webhook when the workflow is activated. Requires an EmailConnect Maker plan or higher.',
+			},
 		],
 	};
 
@@ -577,6 +769,14 @@ export class EmailConnectTrigger implements INodeType {
 					if (aliasMode === 'specific') {
 						staticData.aliasLocalPart = this.getNodeParameter('aliasLocalPart') as string;
 					}
+					// Only an alias this registration created may be deleted on teardown.
+					// Any other action means it existed before (made by hand, by another
+					// workflow, or by an earlier registration of this one).
+					staticData.aliasCreated = result.action === 'created';
+					// Ownership holds for the URL create() registered, nothing else: a
+					// test session starts from a copy of the production static data,
+					// and must not inherit production's right to delete.
+					staticData.createdUrl = webhookUrl;
 					setStoredSecretHash(staticData, webhookSecret);
 
 					return true;
@@ -602,6 +802,8 @@ export class EmailConnectTrigger implements INodeType {
 
 					if (domainId && webhookId) {
 						const ownUrl = this.getNodeWebhookUrl('default') as string;
+
+						if (await handBackRegistration(this, staticData, ownUrl)) return true;
 
 						// Preferred: one atomic backend call. It re-points/cascades the
 						// aliases and deletes the webhook in a single transaction, and

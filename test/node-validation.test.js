@@ -160,9 +160,19 @@ describe('EmailConnect Node Validation', () => {
     test('should require EmailConnect API credentials', () => {
       const description = emailConnectTriggerNode.description;
       
-      expect(description.credentials).toHaveLength(1);
+      expect(description.credentials).toHaveLength(2);
       expect(description.credentials[0].name).toBe('emailConnectApi');
       expect(description.credentials[0].required).toBe(true);
+    });
+
+    test('asks for a per-trigger signing credential only when Verify Signatures is on', () => {
+      const description = emailConnectTriggerNode.description;
+      const signing = description.credentials[1];
+      const toggle = description.properties.find((p) => p.name === 'verifySignatures');
+
+      expect(signing.name).toBe('emailConnectWebhookSigningApi');
+      expect(signing.displayOptions).toEqual({ show: { verifySignatures: [true] } });
+      expect(toggle).toEqual(expect.objectContaining({ type: 'boolean', default: false }));
     });
 
     test('should have webhook configuration', () => {

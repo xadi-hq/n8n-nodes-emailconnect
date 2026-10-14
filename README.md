@@ -47,20 +47,21 @@ Before using the nodes, you need to configure your EmailConnect API credentials:
 2. Click **Create New Credential**
 3. Search for **EmailConnect API**
 4. Enter your EmailConnect API key (get it from [EmailConnect Dashboard](https://app.emailconnect.eu/settings))
-5. Optional: enter a **Webhook Signing Secret** (see below)
 
 #### Webhook signature verification (optional, Maker plan or higher)
 
-EmailConnect signs every delivery with HMAC-SHA256 using the [Standard Webhooks](https://www.standardwebhooks.com) scheme. With a **Webhook Signing Secret** in the credential, the EmailConnect Trigger registers that secret on its webhook and rejects (HTTP 401) any request without a valid signature, or with a timestamp more than 5 minutes off. Without one, the trigger accepts every request to its URL, as before.
+EmailConnect signs every delivery with HMAC-SHA256 using the [Standard Webhooks](https://www.standardwebhooks.com) scheme. Signing proves a request came from EmailConnect; it only protects the trigger once the trigger checks it. With **Verify Signatures** on, the EmailConnect Trigger stores its secret on its webhook and rejects (HTTP 401) any request without a valid signature, or with a timestamp more than 5 minutes off. With it off, the trigger accepts every request to its URL, signed or not.
 
-1. Generate a secret in `whsec_` + base64 format:
+The secret belongs to one trigger, so each webhook can have its own:
+
+1. Generate a secret in `whsec_` + base64 format, or copy the one EmailConnect generated for the webhook:
    ```bash
    echo "whsec_$(openssl rand -base64 24)"
    ```
-2. Paste it into the credential's **Webhook Signing Secret** field.
-3. Activate the workflow — or, for a workflow that is already active, deactivate and reactivate it. The trigger registers the secret on activation.
+2. In the EmailConnect Trigger, turn on **Verify Signatures** and create an **EmailConnect Webhook Signing API** credential holding the secret. Use one such credential per trigger.
+3. Activate the workflow, or for a workflow that is already active, deactivate and reactivate it. The trigger stores the secret on its webhook at activation, replacing any secret the webhook had.
 
-To rotate, change the secret in the credential and deactivate/reactivate every workflow that uses it. With a secret set, hand-made test requests (e.g. `curl`) are rejected; send a real email to the alias to test.
+To rotate, change the secret in that credential and deactivate/reactivate the workflow. With verification on, hand-made test requests (e.g. `curl`) are rejected; send a real email, or EmailConnect's **Send test**, to test.
 
 ### 2. EmailConnect Service Setup
 
@@ -278,11 +279,11 @@ This n8n node requires an EmailConnect API key with **"API User"** scope, which 
 - Ensure your n8n instance can receive external HTTP requests
 
 **Trigger returns 401 "Invalid webhook signature"**
-- The secret EmailConnect signs with no longer matches the one in the credential. If you changed the secret, deactivate and reactivate the workflow.
-- The request was not sent by EmailConnect, or was sent by hand — expected when a signing secret is set.
+- The secret EmailConnect signs with no longer matches the trigger's signing credential. If you changed the secret, deactivate and reactivate the workflow.
+- The request was not sent by EmailConnect, or was sent by hand: expected when Verify Signatures is on.
 
 **"Webhook signing requires an EmailConnect Maker plan or higher" on activation**
-- Signature verification needs a Maker plan or higher. Upgrade, or clear the Webhook Signing Secret in the credential.
+- Signature verification needs a Maker plan or higher. Upgrade, or turn off Verify Signatures on the trigger.
 
 **"Insufficient permissions" Error**
 - Your API key may not have the required scope
@@ -453,7 +454,12 @@ The trigger node receives webhook data from EmailConnect when emails are process
 - Automatic webhook URL switching between test and production modes
 - Webhook verification and activation
 - Domain and catch-all webhook synchronization
-- Comprehensive cleanup logic (limited by n8n framework)
+- Cleanup that never deletes an alias the trigger did not create (see below)
+
+**When you stop listening or deactivate the workflow**
+- *Listen for test event* points the alias's webhook at n8n's test URL. When the test session ends, the trigger points it back where it was (the production URL of an active workflow), so testing an active workflow leaves production intact.
+- *Deactivating* deletes an alias only if the trigger created it. An alias that already existed, or one registered before version 1.4.1, is switched off instead: its settings are kept, mail to it is rejected (shown in EmailConnect as an inactive-alias rejection), and reactivating the workflow switches it back on.
+- A catch-all is never deleted: its previous webhook is restored.
 
 #### Webhook Data Structure
 

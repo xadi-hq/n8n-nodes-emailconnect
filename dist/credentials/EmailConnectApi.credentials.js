@@ -34,14 +34,17 @@ class EmailConnectApi {
                 required: true,
             },
             {
-                displayName: 'Webhook Signing Secret',
+                // Moved to the trigger in 1.4.1 (EmailConnect Webhook Signing API
+                // credential). Kept visible so a value saved by 1.4.0 can be cleared:
+                // while it is filled and Verify Signatures is off, activation refuses
+                // instead of silently dropping verification.
+                displayName: 'Webhook Signing Secret (No Longer Used)',
                 name: 'webhookSecret',
                 type: 'string',
                 typeOptions: { password: true },
                 default: '',
-                placeholder: 'whsec_...',
-                hint: 'Optional. Requires a Maker plan or higher. Leave empty to accept unsigned deliveries.',
-                description: 'When set, the EmailConnect Trigger rejects any request without a valid EmailConnect signature (Standard Webhooks, HMAC-SHA256). Use a secret in "whsec_" + base64 format — generate one with <code>echo "whsec_$(openssl rand -base64 24)"</code>. The trigger registers it on its webhook when the workflow is activated; after changing it, deactivate and reactivate the workflow. With a secret set, hand-made test requests (e.g. curl) are rejected — send a real email instead.',
+                hint: 'Moved to the EmailConnect Trigger. Clear this field.',
+                description: 'Since version 1.4.1 the signing secret is set per trigger: turn on Verify Signatures in the EmailConnect Trigger and select an EmailConnect Webhook Signing API credential. A value left here makes activation stop with an explanation.',
             },
         ];
         // Use generic authentication
