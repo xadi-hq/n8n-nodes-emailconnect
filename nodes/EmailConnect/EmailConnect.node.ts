@@ -120,7 +120,7 @@ export class EmailConnect implements INodeType {
 					},
 				},
 				default: false,
-				description: 'Whether to include email attachments in webhook payload',
+				description: 'Whether to include email attachments in the webhook payload, including images embedded in the HTML body',
 			},
 			{
 				displayName: 'Include Envelope Data',
@@ -279,7 +279,7 @@ export class EmailConnect implements INodeType {
 						name: 'allowAttachments',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to include email attachments in the webhook payload',
+						description: 'Whether to include email attachments in the webhook payload, including images embedded in the HTML body',
 					},
 					{
 						displayName: 'Include Envelope',
@@ -329,7 +329,7 @@ export class EmailConnect implements INodeType {
 						name: 'allowAttachments',
 						type: 'boolean',
 						default: false,
-						description: 'Whether to include email attachments in the webhook payload',
+						description: 'Whether to include email attachments in the webhook payload, including images embedded in the HTML body',
 					},
 					{
 						displayName: 'Email',
