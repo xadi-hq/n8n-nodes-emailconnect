@@ -33,19 +33,6 @@ class EmailConnectApi {
                 description: 'Your EmailConnect API key from <a href="https://app.emailconnect.eu/settings/api-keys" target="_blank">account settings</a>. The key starts with "ec_" and is used to authenticate all API requests.',
                 required: true,
             },
-            {
-                // Moved to the trigger in 1.4.1 (EmailConnect Webhook Signing API
-                // credential). Kept visible so a value saved by 1.4.0 can be cleared:
-                // while it is filled and Verify Signatures is off, activation refuses
-                // instead of silently dropping verification.
-                displayName: 'Webhook Signing Secret (No Longer Used)',
-                name: 'webhookSecret',
-                type: 'string',
-                typeOptions: { password: true },
-                default: '',
-                hint: 'Moved to the EmailConnect Trigger. Clear this field.',
-                description: 'Since version 1.4.1 the signing secret is set per trigger: turn on Verify Signatures in the EmailConnect Trigger and select an EmailConnect Webhook Signing API credential. A value left here makes activation stop with an explanation.',
-            },
         ];
         // Use generic authentication
         this.authenticate = {

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.2] - 2026-10-14
+
+### Removed
+- The **Webhook Signing Secret (No Longer Used)** field on the EmailConnect API credential, and the activation check that refused while it held a value. 1.4.0 was current for under an hour; set the signing secret on the trigger (Verify Signatures and an EmailConnect Webhook Signing API credential).
+
 ## [1.4.1] - 2026-10-14
 
 ### Fixed
