@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Documentation for EmailConnect webhook payload v2** (live on EmailConnect from 9 November 2026). The README's trigger output example now shows the v2 payload: `schemaVersion` and `id`, attachment `status` with `reason`/`reasonDetail` replacing `excluded`/`excludeReason`/`storage`/`uploadType`, the new `inline` flag for images shown in the HTML body (kept as `cid:` links, delivered once), and `spam.symbols` in place of the removed `spam.report`. The node passes the payload through unchanged, so the node itself does not change; workflows that read the removed fields must be updated before that date.
+- The **Allow Attachments** description now says that it also covers images embedded in the HTML body: with it off, those images are no longer delivered.
+
 ## [1.4.0] - 2026-10-01
 
 ### Added

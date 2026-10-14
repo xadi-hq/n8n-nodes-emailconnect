@@ -361,7 +361,7 @@ See [CHANGELOG.md](CHANGELOG.md) and the [GitHub releases](https://github.com/xa
 - **Operation**: `updateConfig`
 - **Parameters**:
   - `domainId` (required): The ID of the domain to update
-  - `allowAttachments` (boolean): Whether to allow email attachments
+  - `allowAttachments` (boolean): Whether to deliver email attachments, including images embedded in the HTML body (when off, those images are left out of the payload)
   - `includeEnvelopeData` (boolean): Whether to include SMTP envelope data
 - **Output**: Updated domain configuration
 
@@ -457,26 +457,71 @@ The trigger node receives webhook data from EmailConnect when emails are process
 
 #### Webhook Data Structure
 
-The trigger node outputs the following data structure:
+The trigger emits the EmailConnect webhook payload exactly as received. Abridged example (payload schema version 2, live from 9 November 2026):
 
 ```json
 {
-  "id": "email-processing-id",
+  "schemaVersion": 2,
+  "id": "msg_cmsample0000000000000000",
   "domainId": "domain-id",
-  "receivedAt": "2025-06-21T10:30:00Z",
-  "sender": "user@example.com",
-  "recipient": "support@yourdomain.com",
-  "subject": "Email subject",
-  "status": "email.received",
-  "payload": {
-    "headers": {},
-    "text": "Plain text content",
-    "html": "<p>HTML content</p>",
-    "attachments": []
+  "aliasId": "alias-id",
+  "message": {
+    "sender": { "email": "sender@example.com", "name": "Jane Doe" },
+    "recipient": { "email": "inbox@yourdomain.com", "name": null },
+    "subject": "Invoice 42",
+    "date": "2026-11-09T10:30:00.000Z",
+    "content": {
+      "text": "Please find the invoice attached.",
+      "html": "<p>Please find the invoice attached.</p><p><img src=\"cid:logo@example.com\" alt=\"Logo\"></p>",
+      "markdown": "Please find the invoice attached.\n\n![Logo](cid:logo@example.com)",
+      "links": [],
+      "reply": { "text": "Please find the invoice attached." }
+    },
+    "attachments": [
+      {
+        "filename": "invoice.pdf",
+        "contentType": "application/pdf",
+        "size": 102400,
+        "contentId": null,
+        "inline": false,
+        "status": "completed",
+        "downloadUrl": "https://app.emailconnect.eu/attachments/0123456789abcdef0123456789abcdef/download"
+      },
+      {
+        "filename": "logo.png",
+        "contentType": "image/png",
+        "size": 2048,
+        "contentId": "logo@example.com",
+        "inline": true,
+        "status": "included",
+        "content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      {
+        "filename": "recording.mp4",
+        "contentType": "video/mp4",
+        "size": 15728640,
+        "contentId": null,
+        "inline": false,
+        "status": "excluded",
+        "reason": "too-large",
+        "reasonDetail": "15.00 MB, limit 10 MB"
+      }
+    ]
   },
   "envelope": {
-    "from": "user@example.com",
-    "to": ["support@yourdomain.com"]
+    "messageId": "<sample-123@example.com>",
+    "allRecipients": { "to": ["inbox@yourdomain.com"], "cc": [], "bcc": [] }
+  },
+  "spam": {
+    "score": 0.5,
+    "engine": "rspamd",
+    "symbols": [{ "name": "DKIM_SIGNED", "weight": -0.1, "description": "DKIM signature present" }]
   }
 }
 ```
+
+Reading attachments:
+- `status` is `included` (bytes in `content`, base64), `completed` (fetch `downloadUrl`), `pending` (still uploading; `downloadUrl` answers 202 until it finishes), `excluded` (left out by a rule or setting) or `failed`. `excluded` and `failed` entries carry a `reason` (for example `too-large`, `virus-detected`, `disabled-in-alias-settings`, `storage-unreachable`) and may carry a human-readable `reasonDetail`.
+- An image shown in the HTML body stays a `cid:` link in `content.html` and arrives once, as the attachment with `inline: true` and the matching `contentId`.
+- On the Free plan `spam` is `{ "available": false, "message": "..." }`. Spam details are in `spam.symbols`.
+- `schemaVersion` tells payload shapes apart. Payloads without it use the shape before 9 November 2026 (`excluded`/`excludeReason`, `storage`, `uploadType`, `spam.report`, embedded images inlined as `data:` URIs in `content.html`).
