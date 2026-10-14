@@ -50,6 +50,34 @@ updates:
       - dependency-name: "n8n-workflow"
         # Only update when n8n releases new versions
         update-types: ["version-update:semver-major"]
+      # n8n's community-package scanner pins these (see tools/n8n-scan); move
+      # when it does. typescript-eslint also lags new TypeScript majors.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+
+  # The pinned n8n scanner behind `npm run lint:n8n`. A bump here means n8n
+  # changed the rules its verification enforces: expect lint fixes.
+  - package-ecosystem: "npm"
+    directory: "/tools/n8n-scan"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Amsterdam"
+    allow:
+      - dependency-name: "@n8n/scan-community-package"
+    reviewers:
+      - "axtg"
+    assignees:
+      - "axtg"
+    commit-message:
+      prefix: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
 
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
