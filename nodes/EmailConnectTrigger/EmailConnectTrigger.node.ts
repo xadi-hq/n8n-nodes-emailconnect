@@ -115,6 +115,62 @@ export function verifyWebhookSignature(
 }
 
 // ---------------------------------------------------------------------------
+// Reply fields: what a reply to this email needs to land in the same thread,
+// ready to map into any sender node (Scaleway TEM, Lettermint, AhaSend, SMTP).
+// Derived only from the payload: no API call, no sender-specific shape.
+//
+//  - to:         the Reply-To address when the sender set one (only visible
+//                with 'include envelope' on the alias), else the From address
+//  - subject:    the original subject with one 'Re: ' in front; null if none
+//  - inReplyTo:  the Message-ID your reply answers (this email's messageId)
+//  - references: the conversation so far plus this email, oldest first
+//  - headers:    the same two values as a header map, empty without a messageId
+// ---------------------------------------------------------------------------
+const ANGLE_ADDRESS = /<([^<>\s]+@[^<>\s]+)>/;
+
+function asString(value: unknown): string {
+	return typeof value === 'string' ? value.trim() : '';
+}
+
+export function buildReplyFields(payload: IDataObject): IDataObject {
+	const message = (payload.message ?? {}) as IDataObject;
+	const envelope = (payload.envelope ?? {}) as IDataObject;
+	const sender = (message.sender ?? {}) as IDataObject;
+	const headers = (envelope.headers ?? {}) as IDataObject;
+
+	const messageId = asString(envelope.messageId) || null;
+	const prior = Array.isArray(envelope.references)
+		? (envelope.references as unknown[]).map(asString).filter((id) => id !== '' && id !== messageId)
+		: [];
+	const references = messageId ? [...prior, messageId] : prior;
+
+	// envelope.headers carries an address header as its first address; accept
+	// the 'Name <a@b>' form too, in case a parser ever passes it through.
+	const replyToRaw = asString(headers['reply-to']);
+	const replyTo = replyToRaw ? (replyToRaw.match(ANGLE_ADDRESS)?.[1] ?? replyToRaw) : '';
+	const to: IDataObject = replyTo
+		? { email: replyTo, name: null }
+		: { email: asString(sender.email) || null, name: asString(sender.name) || null };
+
+	const subject = asString(message.subject);
+	const replySubject = subject ? (/^re:/i.test(subject) ? subject : `Re: ${subject}`) : null;
+
+	const replyHeaders: IDataObject = {};
+	if (messageId) {
+		replyHeaders['In-Reply-To'] = messageId;
+		replyHeaders.References = references.join(' ');
+	}
+
+	return {
+		to,
+		subject: replySubject,
+		inReplyTo: messageId,
+		references,
+		headers: replyHeaders,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Helper: build the body for the atomic POST /api/webhooks/alias upsert.
 // Shared by create() and the URL-change path so both use the one mechanism
 // that reliably (re)verifies the webhook server-side (the trusted-source
@@ -619,6 +675,13 @@ export class EmailConnectTrigger implements INodeType {
 				default: false,
 				description: 'Whether to reject any request without a valid EmailConnect signature (HTTP 401). Select an EmailConnect Webhook Signing API credential, one per trigger; the trigger stores it on its webhook when the workflow is activated. Requires an EmailConnect Maker plan or higher.',
 			},
+			{
+				displayName: 'Add Reply Fields',
+				name: 'addReplyFields',
+				type: 'boolean',
+				default: true,
+				description: 'Whether to add a replyFields object to each email: the address, subject, In-Reply-To and References a reply needs to land in the same thread. Map them into any sender node, such as an HTTP Request to Scaleway Transactional Email.',
+			},
 		],
 	};
 
@@ -1013,12 +1076,19 @@ export class EmailConnectTrigger implements INodeType {
 			return { workflowData: [[]] };
 		}
 
-		// Emit the EmailConnect payload exactly as received. Delivery is already
-		// scoped to this alias/domain server-side, so no client-side domain/alias
-		// or event filtering is applied. Email content is under `message.*`,
-		// routing/headers under `envelope.*`, plus top-level `domainId`/`aliasId`.
+		// Emit the EmailConnect payload as received. Delivery is already scoped to
+		// this alias/domain server-side, so no client-side domain/alias or event
+		// filtering is applied. Email content is under `message.*`, routing/headers
+		// under `envelope.*`, plus top-level `domainId`/`aliasId`. The only addition
+		// is `replyFields`, next to the payload, never inside it; skipped when a
+		// custom payload template removed `message`.
+		const addReplyFields = this.getNodeParameter('addReplyFields', true) === true;
+		const json: IDataObject = addReplyFields && emailData.message && typeof emailData.message === 'object'
+			? { ...emailData, replyFields: buildReplyFields(emailData) }
+			: emailData;
+
 		return {
-			workflowData: [[{ json: emailData }]],
+			workflowData: [[{ json }]],
 		};
 	}
 }

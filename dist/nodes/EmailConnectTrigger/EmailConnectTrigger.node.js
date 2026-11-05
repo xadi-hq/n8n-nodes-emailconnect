@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmailConnectTrigger = void 0;
 exports.verifyWebhookSignature = verifyWebhookSignature;
+exports.buildReplyFields = buildReplyFields;
 const n8n_workflow_1 = require("n8n-workflow");
 const crypto_1 = require("crypto");
 const GenericFunctions_1 = require("../EmailConnect/GenericFunctions");
@@ -83,6 +84,55 @@ function verifyWebhookSignature(secret, headers, rawBody, nowSeconds = Math.floo
         // timingSafeEqual throws on a length mismatch.
         return candidate.length === expected.length && (0, crypto_1.timingSafeEqual)(candidate, expected);
     });
+}
+// ---------------------------------------------------------------------------
+// Reply fields: what a reply to this email needs to land in the same thread,
+// ready to map into any sender node (Scaleway TEM, Lettermint, AhaSend, SMTP).
+// Derived only from the payload: no API call, no sender-specific shape.
+//
+//  - to:         the Reply-To address when the sender set one (only visible
+//                with 'include envelope' on the alias), else the From address
+//  - subject:    the original subject with one 'Re: ' in front; null if none
+//  - inReplyTo:  the Message-ID your reply answers (this email's messageId)
+//  - references: the conversation so far plus this email, oldest first
+//  - headers:    the same two values as a header map, empty without a messageId
+// ---------------------------------------------------------------------------
+const ANGLE_ADDRESS = /<([^<>\s]+@[^<>\s]+)>/;
+function asString(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+function buildReplyFields(payload) {
+    var _a, _b, _c, _d, _e, _f;
+    const message = ((_a = payload.message) !== null && _a !== void 0 ? _a : {});
+    const envelope = ((_b = payload.envelope) !== null && _b !== void 0 ? _b : {});
+    const sender = ((_c = message.sender) !== null && _c !== void 0 ? _c : {});
+    const headers = ((_d = envelope.headers) !== null && _d !== void 0 ? _d : {});
+    const messageId = asString(envelope.messageId) || null;
+    const prior = Array.isArray(envelope.references)
+        ? envelope.references.map(asString).filter((id) => id !== '' && id !== messageId)
+        : [];
+    const references = messageId ? [...prior, messageId] : prior;
+    // envelope.headers carries an address header as its first address; accept
+    // the 'Name <a@b>' form too, in case a parser ever passes it through.
+    const replyToRaw = asString(headers['reply-to']);
+    const replyTo = replyToRaw ? ((_f = (_e = replyToRaw.match(ANGLE_ADDRESS)) === null || _e === void 0 ? void 0 : _e[1]) !== null && _f !== void 0 ? _f : replyToRaw) : '';
+    const to = replyTo
+        ? { email: replyTo, name: null }
+        : { email: asString(sender.email) || null, name: asString(sender.name) || null };
+    const subject = asString(message.subject);
+    const replySubject = subject ? (/^re:/i.test(subject) ? subject : `Re: ${subject}`) : null;
+    const replyHeaders = {};
+    if (messageId) {
+        replyHeaders['In-Reply-To'] = messageId;
+        replyHeaders.References = references.join(' ');
+    }
+    return {
+        to,
+        subject: replySubject,
+        inReplyTo: messageId,
+        references,
+        headers: replyHeaders,
+    };
 }
 // ---------------------------------------------------------------------------
 // Helper: build the body for the atomic POST /api/webhooks/alias upsert.
@@ -530,6 +580,13 @@ class EmailConnectTrigger {
                     default: false,
                     description: 'Whether to reject any request without a valid EmailConnect signature (HTTP 401). Select an EmailConnect Webhook Signing API credential, one per trigger; the trigger stores it on its webhook when the workflow is activated. Requires an EmailConnect Maker plan or higher.',
                 },
+                {
+                    displayName: 'Add Reply Fields',
+                    name: 'addReplyFields',
+                    type: 'boolean',
+                    default: true,
+                    description: 'Whether to add a replyFields object to each email: the address, subject, In-Reply-To and References a reply needs to land in the same thread. Map them into any sender node, such as an HTTP Request to Scaleway Transactional Email.',
+                },
             ],
         };
         this.methods = {
@@ -897,12 +954,18 @@ class EmailConnectTrigger {
         if (emailData.type === 'webhook_verification') {
             return { workflowData: [[]] };
         }
-        // Emit the EmailConnect payload exactly as received. Delivery is already
-        // scoped to this alias/domain server-side, so no client-side domain/alias
-        // or event filtering is applied. Email content is under `message.*`,
-        // routing/headers under `envelope.*`, plus top-level `domainId`/`aliasId`.
+        // Emit the EmailConnect payload as received. Delivery is already scoped to
+        // this alias/domain server-side, so no client-side domain/alias or event
+        // filtering is applied. Email content is under `message.*`, routing/headers
+        // under `envelope.*`, plus top-level `domainId`/`aliasId`. The only addition
+        // is `replyFields`, next to the payload, never inside it; skipped when a
+        // custom payload template removed `message`.
+        const addReplyFields = this.getNodeParameter('addReplyFields', true) === true;
+        const json = addReplyFields && emailData.message && typeof emailData.message === 'object'
+            ? { ...emailData, replyFields: buildReplyFields(emailData) }
+            : emailData;
         return {
-            workflowData: [[{ json: emailData }]],
+            workflowData: [[{ json }]],
         };
     }
 }

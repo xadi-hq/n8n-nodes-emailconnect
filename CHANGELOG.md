@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-11-05
+
+### Added
+- **Reply fields.** The EmailConnect Trigger adds a `replyFields` object to every email, next to the payload: the address to reply to (Reply-To when the sender set one, otherwise From), the subject with one `Re: ` in front, and the `In-Reply-To` and `References` values a reply needs to land in the same thread, also as a ready header map. Map them into any sender: an HTTP Request to Scaleway Transactional Email, Lettermint, AhaSend, or another provider that accepts custom headers. Computed from the payload only; no extra API call.
+- **Add Reply Fields** option on the trigger, on by default. Turn it off to emit the payload exactly as EmailConnect delivered it.
+
+### Unchanged
+- The payload itself is not modified. `replyFields` is a separate top-level key, and it is not added when a custom payload template removed `message`.
+
 ## [1.4.3] - 2026-10-14
 
 ### Fixed

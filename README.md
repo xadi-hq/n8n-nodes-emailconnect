@@ -10,6 +10,7 @@ An n8n community node for [EmailConnect](https://emailconnect.eu) - enabling sea
 - **Alias Management**: Create, read, update, and delete email aliases under your domains
 - **Webhook Configuration**: Set up and manage webhooks for email processing automation
 - **Email Triggers**: Receive real-time notifications when emails are processed through EmailConnect
+- **Reply Fields**: Every email comes with the address, subject and threading headers a reply needs, ready to map into any sender
 - **Filtering Options**: Filter triggers by domain, alias, or event type for precise workflow control
 
 ## Installation
@@ -473,7 +474,7 @@ The trigger node receives webhook data from EmailConnect when emails are process
 
 #### Webhook Data Structure
 
-The trigger emits the EmailConnect webhook payload exactly as received. Abridged example (payload schema version 2, live from 9 November 2026):
+The trigger emits the EmailConnect webhook payload as received, plus a `replyFields` object next to it (see [Reply fields](#reply-fields)). Abridged example (payload schema version 2, live from 9 November 2026):
 
 ```json
 {
@@ -541,3 +542,41 @@ Reading attachments:
 - An image shown in the HTML body stays a `cid:` link in `content.html` and arrives once, as the attachment with `inline: true` and the matching `contentId`.
 - On the Free plan `spam` is `{ "available": false, "message": "..." }`. Spam details are in `spam.symbols`.
 - `schemaVersion` tells payload shapes apart. Payloads without it use the shape before 9 November 2026 (`excluded`/`excludeReason`, `storage`, `uploadType`, `spam.report`, embedded images inlined as `data:` URIs in `content.html`).
+
+#### Reply fields
+
+EmailConnect receives email; it does not send it. To answer an email from a workflow, you send through a provider of your choice (Scaleway Transactional Email, Lettermint, AhaSend, any SMTP server). For the answer to land in the same thread, it needs the right address, subject and threading headers. The trigger adds them to every email as `replyFields`, next to the payload:
+
+```json
+"replyFields": {
+  "to": { "email": "sender@example.com", "name": "Jane Doe" },
+  "subject": "Re: Invoice 42",
+  "inReplyTo": "<sample-123@example.com>",
+  "references": ["<earlier-1@example.com>", "<sample-123@example.com>"],
+  "headers": {
+    "In-Reply-To": "<sample-123@example.com>",
+    "References": "<earlier-1@example.com> <sample-123@example.com>"
+  }
+}
+```
+
+- `to` is the Reply-To address when the sender set one, otherwise the From address. Reply-To is only visible when the alias includes envelope data.
+- `subject` is the original subject with one `Re: ` in front, or `null` when the email had none.
+- `inReplyTo` and `references` are what your reply should send as `In-Reply-To` and `References`. `headers` holds the same values as a header map, and is empty when the email carried no Message-ID.
+- They are computed from the payload only. The trigger makes no extra call and sends nothing.
+
+Mapping them into a sender, for example an HTTP Request node calling the Scaleway Transactional Email API:
+
+```js
+{{ JSON.stringify({
+  project_id: 'your-project-id',
+  from: { email: 'support@yourdomain.com', name: 'Support' },
+  to: [$('EmailConnect Trigger').item.json.replyFields.to],
+  subject: $('EmailConnect Trigger').item.json.replyFields.subject,
+  text: $json.replyText,
+  additional_headers: Object.entries($('EmailConnect Trigger').item.json.replyFields.headers)
+    .map(([key, value]) => ({ key, value }))
+}) }}
+```
+
+n8n's Send Email node cannot set custom headers, so use an HTTP Request node (or your provider's node, if it supports headers) for threaded replies. Turn **Add Reply Fields** off in the trigger to leave the output exactly as EmailConnect delivered it. A walkthrough of the whole setup is at [emailconnect.eu/learn/guides/reply-with-scaleway-tem](https://emailconnect.eu/learn/guides/reply-with-scaleway-tem/).

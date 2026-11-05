@@ -1,4 +1,4 @@
-import { ICredentialTestFunctions, ICredentialsDecrypted, IHookFunctions, INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData, INodeCredentialTestResult } from 'n8n-workflow';
+import { ICredentialTestFunctions, ICredentialsDecrypted, IDataObject, IHookFunctions, INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData, INodeCredentialTestResult } from 'n8n-workflow';
 import { getDomainOptions } from '../EmailConnect/GenericFunctions';
 type IncomingHttpHeaders = Record<string, string | string[] | undefined>;
 /**
@@ -7,6 +7,7 @@ type IncomingHttpHeaders = Record<string, string | string[] | undefined>;
  * (secret rotation); any one matching is enough.
  */
 export declare function verifyWebhookSignature(secret: string, headers: IncomingHttpHeaders, rawBody: Buffer | undefined, nowSeconds?: number): boolean;
+export declare function buildReplyFields(payload: IDataObject): IDataObject;
 export declare class EmailConnectTrigger implements INodeType {
     description: INodeTypeDescription;
     methods: {
