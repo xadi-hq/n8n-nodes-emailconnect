@@ -474,7 +474,7 @@ The trigger node receives webhook data from EmailConnect when emails are process
 
 #### Webhook Data Structure
 
-The trigger emits the EmailConnect webhook payload as received, plus a `replyFields` object next to it (see [Reply fields](#reply-fields)). Abridged example (payload schema version 2, live from 9 November 2026):
+The trigger emits the EmailConnect webhook payload as received, plus a `replyFields` object next to it (see [Reply fields](#reply-fields)). Abridged example (payload schema version 2):
 
 ```json
 {
@@ -484,6 +484,7 @@ The trigger emits the EmailConnect webhook payload as received, plus a `replyFie
   "aliasId": "alias-id",
   "message": {
     "sender": { "email": "sender@example.com", "name": "Jane Doe" },
+    "replyTo": null,
     "recipient": { "email": "inbox@yourdomain.com", "name": null },
     "subject": "Invoice 42",
     "date": "2026-11-09T10:30:00.000Z",
@@ -541,7 +542,8 @@ Reading attachments:
 - `status` is `included` (bytes in `content`, base64), `completed` (fetch `downloadUrl`), `pending` (still uploading; `downloadUrl` answers 202 until it finishes), `excluded` (left out by a rule or setting) or `failed`. `excluded` and `failed` entries carry a `reason` (for example `too-large`, `virus-detected`, `disabled-in-alias-settings`, `storage-unreachable`) and may carry a human-readable `reasonDetail`.
 - An image shown in the HTML body stays a `cid:` link in `content.html` and arrives once, as the attachment with `inline: true` and the matching `contentId`.
 - On the Free plan `spam` is `{ "available": false, "message": "..." }`. Spam details are in `spam.symbols`.
-- `schemaVersion` tells payload shapes apart. Payloads without it use the shape before 9 November 2026 (`excluded`/`excludeReason`, `storage`, `uploadType`, `spam.report`, embedded images inlined as `data:` URIs in `content.html`).
+- `message.replyTo` is `{ "email", "name" }` when the sender set a Reply-To address, otherwise `null`.
+- `schemaVersion` is `2`. Payloads from before 9 November 2026 have no `schemaVersion` and use the older shape.
 
 #### Reply fields
 
@@ -560,7 +562,7 @@ EmailConnect receives email; it does not send it. To answer an email from a work
 }
 ```
 
-- `to` is the Reply-To address when the sender set one, otherwise the From address. Reply-To is only visible when the alias includes envelope data.
+- `to` is the Reply-To address when the sender set one (`message.replyTo`), otherwise the From address. It works whatever the alias's header settings.
 - `subject` is the original subject with one `Re: ` in front, or `null` when the email had none.
 - `inReplyTo` and `references` are what your reply should send as `In-Reply-To` and `References`. `headers` holds the same values as a header map, and is empty when the email carried no Message-ID.
 - They are computed from the payload only. The trigger makes no extra call and sends nothing.
