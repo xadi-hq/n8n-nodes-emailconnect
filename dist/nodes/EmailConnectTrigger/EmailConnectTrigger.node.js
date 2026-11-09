@@ -90,8 +90,11 @@ function verifyWebhookSignature(secret, headers, rawBody, nowSeconds = Math.floo
 // ready to map into any sender node (Scaleway TEM, Lettermint, AhaSend, SMTP).
 // Derived only from the payload: no API call, no sender-specific shape.
 //
-//  - to:         the Reply-To address when the sender set one (only visible
-//                with 'include envelope' on the alias), else the From address
+//  - to:         the Reply-To address when the sender set one, else the From
+//                address. Reply-To comes from message.replyTo (payload v2, from
+//                9 November 2026, always present); payloads without it fall back
+//                to envelope.headers['reply-to'], visible only when the alias
+//                includes headers
 //  - subject:    the original subject with one 'Re: ' in front; null if none
 //  - inReplyTo:  the Message-ID your reply answers (this email's messageId)
 //  - references: the conversation so far plus this email, oldest first
@@ -102,7 +105,7 @@ function asString(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 function buildReplyFields(payload) {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g;
     const message = ((_a = payload.message) !== null && _a !== void 0 ? _a : {});
     const envelope = ((_b = payload.envelope) !== null && _b !== void 0 ? _b : {});
     const sender = ((_c = message.sender) !== null && _c !== void 0 ? _c : {});
@@ -112,13 +115,22 @@ function buildReplyFields(payload) {
         ? envelope.references.map(asString).filter((id) => id !== '' && id !== messageId)
         : [];
     const references = messageId ? [...prior, messageId] : prior;
-    // envelope.headers carries an address header as its first address; accept
-    // the 'Name <a@b>' form too, in case a parser ever passes it through.
+    // message.replyTo ({ name, email } or null) is in every v2 payload. Older
+    // payloads only carry Reply-To in envelope.headers, as its first address;
+    // accept the 'Name <a@b>' form there too, in case a parser passes it through.
+    const replyToObject = ((_e = message.replyTo) !== null && _e !== void 0 ? _e : {});
     const replyToRaw = asString(headers['reply-to']);
-    const replyTo = replyToRaw ? ((_f = (_e = replyToRaw.match(ANGLE_ADDRESS)) === null || _e === void 0 ? void 0 : _e[1]) !== null && _f !== void 0 ? _f : replyToRaw) : '';
-    const to = replyTo
-        ? { email: replyTo, name: null }
-        : { email: asString(sender.email) || null, name: asString(sender.name) || null };
+    const headerReplyTo = replyToRaw ? ((_g = (_f = replyToRaw.match(ANGLE_ADDRESS)) === null || _f === void 0 ? void 0 : _f[1]) !== null && _g !== void 0 ? _g : replyToRaw) : '';
+    let to;
+    if (asString(replyToObject.email)) {
+        to = { email: asString(replyToObject.email), name: asString(replyToObject.name) || null };
+    }
+    else if (headerReplyTo) {
+        to = { email: headerReplyTo, name: null };
+    }
+    else {
+        to = { email: asString(sender.email) || null, name: asString(sender.name) || null };
+    }
     const subject = asString(message.subject);
     const replySubject = subject ? (/^re:/i.test(subject) ? subject : `Re: ${subject}`) : null;
     const replyHeaders = {};

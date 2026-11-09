@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1] - 2026-11-09
+
+### Fixed
+- **Reply fields use the sender's Reply-To on every alias.** `replyFields.to` now reads `message.replyTo`, which every EmailConnect payload carries since payload v2 (9 November 2026). 1.5.0 only found Reply-To in `envelope.headers`, which is missing when the alias leaves headers out, so replies went to the From address instead. The Reply-To display name is now kept too. Older payloads without `message.replyTo` still fall back to the header, then to the From address.
+
+### Changed
+- README: the payload example shows `message.replyTo`, and the notes on the v2 cut-over are trimmed now that v2 is live.
+
 ## [1.5.0] - 2026-11-05
 
 ### Added

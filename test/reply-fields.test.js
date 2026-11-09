@@ -86,7 +86,34 @@ describe('buildReplyFields', () => {
     expect(fields.headers).toEqual({});
   });
 
-  test('prefers the Reply-To header over the From address', () => {
+  test('prefers message.replyTo over the From address, keeping its name', () => {
+    const fields = buildReplyFields(basePayload({
+      message: { replyTo: { email: 'tickets@example.com', name: 'Ticket Desk' } },
+    }));
+    expect(fields.to).toEqual({ email: 'tickets@example.com', name: 'Ticket Desk' });
+  });
+
+  test('message.replyTo without a name gives name null', () => {
+    const fields = buildReplyFields(basePayload({
+      message: { replyTo: { email: 'tickets@example.com', name: null } },
+    }));
+    expect(fields.to).toEqual({ email: 'tickets@example.com', name: null });
+  });
+
+  test('message.replyTo wins over the Reply-To header', () => {
+    const fields = buildReplyFields(basePayload({
+      message: { replyTo: { email: 'tickets@example.com', name: 'Ticket Desk' } },
+      envelope: { headers: { 'reply-to': 'other@example.com' } },
+    }));
+    expect(fields.to.email).toBe('tickets@example.com');
+  });
+
+  test('message.replyTo null and no headers (an alias without headers): reply to the sender', () => {
+    const fields = buildReplyFields(basePayload({ message: { replyTo: null } }));
+    expect(fields.to).toEqual({ email: 'alice@example.com', name: 'Alice Martin' });
+  });
+
+  test('a payload without message.replyTo falls back to the Reply-To header', () => {
     const fields = buildReplyFields(basePayload({
       envelope: { headers: { 'reply-to': 'tickets@example.com' } },
     }));
